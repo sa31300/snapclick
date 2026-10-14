@@ -136,9 +136,19 @@ class Tray(QSystemTrayIcon):
                 "clipboard_version": c.clipboard_version,
                 "saved_path": saved_path,
             }
-            self.preview = Preview(image)
+            self.preview = Preview(image, can_save=not prefs["auto_save"],
+                                   save_folder=prefs["save_folder"], saved_path=saved_path)
             self.preview.retake.connect(self.undo_and_retake)
+            self.preview.save_requested.connect(self.save_from_preview)
             self.preview.closed.connect(self._preview_closed)
+
+    def save_from_preview(self):
+        path = self.save_image(self.preview.image, settings.load())
+        if path:
+            self.undo["saved_path"] = path  # Retake deletes it too
+            self.preview.show_saved(path)
+        else:
+            self.preview.show_save_failed()
 
     def _preview_closed(self):
         self.undo = None  # free the frozen screen
