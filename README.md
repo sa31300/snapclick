@@ -17,6 +17,7 @@ The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"*
 3. Click one corner, then the opposite corner. Paste anywhere with **Ctrl+V**.
 
 **Esc** or **right-click** cancels. A magnifier next to the cursor helps you hit the exact pixel.
+Picked the wrong area? With the preview on, click **✕** on the thumbnail: the capture is undone (clipboard and saved file) and you can select again on the same frozen screen.
 
 > If PrtSc opens the Windows Snipping Tool instead, turn it off in
 > *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
@@ -33,7 +34,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) |
 | Hotkey | PrtSc (fixed in v1) |
-| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s |
+| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; ✕ = undo and retake) |
 | Start with Windows | Off |
 
 ## How I built this

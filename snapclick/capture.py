@@ -6,7 +6,7 @@ correct on scaled screens (125%, 150%) and across mixed-scale monitors.
 import ctypes
 from ctypes import wintypes
 
-from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QMimeData, QObject, QPoint, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -39,6 +39,7 @@ gdi32.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, winty
                             ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT]
 gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [wintypes.HDC]
+user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
 user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
 
 
@@ -67,6 +68,31 @@ def grab_desktop():
     return image, QPoint(x, y)
 
 
+def save_clipboard():
+    """A copy of everything on the clipboard now (text, images, files...)."""
+    source = QGuiApplication.clipboard().mimeData()
+    saved = QMimeData()
+    if source is None:
+        return saved
+    for fmt in source.formats():
+        saved.setData(fmt, source.data(fmt))
+    if source.hasImage():
+        saved.setImageData(source.imageData())
+    return saved
+
+
+def restore_clipboard(saved):
+    if saved.formats() or saved.hasImage():
+        QGuiApplication.clipboard().setMimeData(saved)
+    else:
+        QGuiApplication.clipboard().clear()  # it was empty before
+
+
+def clipboard_version():
+    """Windows counts every clipboard change; same number = nothing new copied."""
+    return user32.GetClipboardSequenceNumber()
+
+
 def physical_rect(screen):
     """A monitor's area in real pixels. Qt keeps each screen's top-left in
     real pixels on Windows; only the size is scaled."""
@@ -81,9 +107,12 @@ class Capture(QObject):
     captured = Signal(QImage)  # the selected area, after it is copied
     finished = Signal()
 
-    def __init__(self):
+    def __init__(self, frozen=None):
+        """`frozen` = (image, origin) of an earlier capture, to select again on it."""
         super().__init__()
-        self.image, self.origin = grab_desktop()  # freeze the screen first
+        self.image, self.origin = frozen or grab_desktop()  # freeze the screen first
+        self.previous_clipboard = None  # clipboard before this capture, for undo
+        self.clipboard_version = None  # clipboard version right after we copied
         self.first = None  # corner 1, real pixels
         self.cursor = None  # mouse position, real pixels
         self.overlays = [Overlay(self, screen) for screen in QGuiApplication.screens()]
@@ -125,15 +154,20 @@ class Capture(QObject):
         area = self.selection()
         if area.width() > 0 and area.height() > 0:  # 0 px cancels
             crop = self.image.copy(area.translated(-self.origin))
+            self.previous_clipboard = save_clipboard()
             QGuiApplication.clipboard().setImage(crop)
-            self.close()
+            self.clipboard_version = clipboard_version()
+            self.close_overlays()
             self.captured.emit(crop)
-            return
         self.close()
 
-    def close(self):
+    def close_overlays(self):
         for overlay in self.overlays:
             overlay.close()
+        self.overlays = []  # closed windows are deleted; don't touch them again
+
+    def close(self):
+        self.close_overlays()
         self.finished.emit()
 
 

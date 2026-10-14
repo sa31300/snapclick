@@ -8,7 +8,7 @@ from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from snapclick import settings
-from snapclick.capture import Capture
+from snapclick.capture import Capture, clipboard_version, restore_clipboard
 from snapclick.preview import Preview
 from snapclick.settings_window import SettingsWindow
 
@@ -74,6 +74,7 @@ class Tray(QSystemTrayIcon):
         self.capture = None  # the running capture, if any
         self.settings_window = None
         self.preview = None
+        self.undo = None  # what the preview's ✕ needs to undo the last capture
         self.light = taskbar_is_light()
         self.setIcon(make_icon(self.light))
         self.setToolTip(TOOLTIP)
@@ -113,10 +114,11 @@ class Tray(QSystemTrayIcon):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:  # left-click
             self.start_capture()
 
-    def start_capture(self):
+    def start_capture(self, frozen=None):
         if self.capture:  # already capturing: ignore a second PrtSc
             return
-        self.capture = Capture()
+        self.close_preview()  # its ✕ must not undo a newer capture
+        self.capture = Capture(frozen)
         self.capture.captured.connect(self._captured)
         self.capture.finished.connect(self._capture_done)
 
@@ -125,12 +127,44 @@ class Tray(QSystemTrayIcon):
 
     def _captured(self, image):
         prefs = settings.load()
-        if prefs["auto_save"]:
-            self.save_image(image, prefs)
+        saved_path = self.save_image(image, prefs) if prefs["auto_save"] else None
         if prefs["show_preview"]:
+            c = self.capture
+            self.undo = {
+                "frozen": (c.image, c.origin),
+                "clipboard": c.previous_clipboard,
+                "clipboard_version": c.clipboard_version,
+                "saved_path": saved_path,
+            }
             self.preview = Preview(image)
+            self.preview.retake.connect(self.undo_and_retake)
+            self.preview.closed.connect(self._preview_closed)
+
+    def _preview_closed(self):
+        self.undo = None  # free the frozen screen
+
+    def close_preview(self):
+        if self.preview:
+            self.preview.close()
+            self.preview = None
+
+    def undo_and_retake(self):
+        undo = self.undo
+        self.close_preview()
+        if undo is None:
+            return
+        # Restore the clipboard only if nothing else was copied since.
+        if clipboard_version() == undo["clipboard_version"]:
+            restore_clipboard(undo["clipboard"])
+        if undo["saved_path"]:
+            try:
+                undo["saved_path"].unlink()
+            except OSError:
+                pass  # already gone or locked: nothing more to do
+        self.start_capture(frozen=undo["frozen"])
 
     def save_image(self, image, prefs):
+        """Save to the save folder. Returns the file path, or None if it failed."""
         try:
             folder = Path(prefs["save_folder"])
             folder.mkdir(parents=True, exist_ok=True)
@@ -144,6 +178,8 @@ class Tray(QSystemTrayIcon):
         if not ok:
             self.showMessage("Snapclick", f"Could not save to {prefs['save_folder']}.\n"
                              "The image is still in your clipboard.", QSystemTrayIcon.MessageIcon.Warning)
+            return None
+        return path
 
     def open_settings(self):
         if self.settings_window is None or not self.settings_window.isVisible():
