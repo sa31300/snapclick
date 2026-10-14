@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from snapclick import settings
 from snapclick.hotkey import PrtScHotkey, snipping_tool_owns_prtsc
-from snapclick.tray import Tray
+from snapclick.tray import Tray, make_icon
 
 ERROR_ALREADY_EXISTS = 183
 
@@ -68,6 +68,7 @@ def main():
         return
 
     load_fonts()
+    app.setWindowIcon(make_icon(light=False))  # amber icon for windows (dark title bars)
     app.setQuitOnLastWindowClosed(False)  # tray app: keep running with no windows
     tray = Tray(app)
     tray.show()
