@@ -1,4 +1,6 @@
 """Small thumbnail shown bottom-right after a capture, with Save and Retake buttons."""
+import subprocess
+
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
@@ -71,9 +73,9 @@ class Preview(QWidget):
         self.image = image
         self.can_save = can_save
         self.save_folder = save_folder
-        self.saved_name = saved_path.name if saved_path else None
+        self.saved_path = saved_path  # file written by auto-save or the Save button
         self.save_state = None  # None, "saved" or "failed" (Save button only)
-        self.hover = None  # "save", "retake" or None
+        self.hover = None  # "save", "retake", "link" (the file name) or None
 
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         # Fit the image in MAX_SIZE (screen points), never enlarge it.
@@ -123,7 +125,7 @@ class Preview(QWidget):
 
     def show_saved(self, path):
         self.save_state = "saved"
-        self.saved_name = path.name
+        self.saved_path = path
         self.flash.start()
         self.glow.start()
         self.update()
@@ -143,12 +145,16 @@ class Preview(QWidget):
 
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
-        self.set_hover(next((name for name, rect in self.buttons.items() if rect.contains(pos)), None))
+        hover = next((name for name, rect in self.buttons.items() if rect.contains(pos)), None)
+        link = self.label_parts()[2]
+        if hover is None and link and link.contains(pos):
+            hover = "link"
+        self.set_hover(hover)
 
     def set_hover(self, name):
         if name != self.hover:
             self.hover = name
-            clickable = name == "retake" or (name == "save" and self.save_state != "saved")
+            clickable = name in ("retake", "link") or (name == "save" and self.save_state != "saved")
             self.setCursor(Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor)
             self.update()
 
@@ -160,6 +166,15 @@ class Preview(QWidget):
             self.retake.emit()
         elif "save" in self.buttons and self.buttons["save"].contains(pos) and self.save_state != "saved":
             self.save_requested.emit()
+        elif self.label_parts()[2] and self.label_parts()[2].contains(pos):
+            self.show_in_explorer()
+
+    def show_in_explorer(self):
+        """Open File Explorer with the saved file selected."""
+        if self.saved_path.exists():
+            subprocess.Popen(f'explorer /select,"{self.saved_path}"')
+        else:
+            subprocess.Popen(f'explorer "{self.saved_path.parent}"')
 
     def closeEvent(self, event):
         self.timer.stop()
@@ -169,18 +184,30 @@ class Preview(QWidget):
     # --- drawing -----------------------------------------------------------
 
     def label(self):
-        """(text, color) for the line under the image."""
+        """(text, file name or None, color) for the line under the image."""
         if self.hover == "retake":
-            return "retake · undo copy", AMBER
+            return "retake · undo copy", None, AMBER
         if self.save_state == "saved":
-            return f"saved ✓ {self.saved_name}", GREEN
+            return "saved ✓ ", self.saved_path.name, GREEN
         if self.save_state == "failed":
-            return "save failed", MUTED
+            return "save failed", None, MUTED
         if self.hover == "save":
-            return self.save_folder, BLUE
-        if self.saved_name:  # auto-saved
-            return f"saved · {self.saved_name}", MUTED
-        return "copied to clipboard", MUTED
+            return self.save_folder, None, BLUE
+        if self.saved_path:  # auto-saved
+            return "saved · ", self.saved_path.name, MUTED
+        return "copied to clipboard", None, MUTED
+
+    def label_parts(self):
+        """What to draw: (text, file name as shown, rect of the file name link)."""
+        text, name, _ = self.label()
+        metrics = QFontMetrics(self.label_font)
+        area = self.label_rect
+        if not name:
+            return metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, area.width()), None, None
+        start = metrics.horizontalAdvance(text)
+        shown = metrics.elidedText(name, Qt.TextElideMode.ElideMiddle, area.width() - start)
+        link = QRect(area.x() + start, area.y(), metrics.horizontalAdvance(shown), area.height())
+        return text, shown, link
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -219,8 +246,13 @@ class Preview(QWidget):
             grow = 1 + 4 * t
             p.drawRect(QRect(self.buttons["save"]).toRectF().adjusted(-grow, -grow, grow, grow))
 
-        text, color = self.label()
-        p.setFont(self.label_font)
+        color = self.label()[2]
+        text, name, link = self.label_parts()
         p.setPen(color)
-        text = QFontMetrics(self.label_font).elidedText(text, Qt.TextElideMode.ElideMiddle, self.label_rect.width())
+        p.setFont(self.label_font)
         p.drawText(self.label_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+        if name:
+            link_font = QFont(self.label_font)
+            link_font.setUnderline(self.hover == "link")
+            p.setFont(link_font)
+            p.drawText(link, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, name)

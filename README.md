@@ -13,7 +13,7 @@ The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"*
 ## How to use
 
 1. Run `Snapclick.exe`. The icon appears in the tray (bottom-right, maybe under `^`).
-2. Press **PrtSc** (or left-click the tray icon). The screen freezes and dims.
+2. Press **PrtSc** (or your own hotkey, or left-click the tray icon). The screen freezes and dims.
 3. Click one corner, then the opposite corner. Paste anywhere with **Ctrl+V**.
 
 **Esc** or **right-click** cancels. A magnifier next to the cursor helps you hit the exact pixel.
@@ -21,9 +21,11 @@ With the preview on, the thumbnail has two buttons:
 - **Retake** (back arrow): undoes the capture (clipboard and saved file) and lets you select again on the same frozen screen.
 - **Save** (arrow into tray, only when auto-save is off): saves this one capture to your save folder.
 
+When a capture is saved, click the **file name** under the thumbnail to open it in File Explorer.
+
 > If PrtSc opens the Windows Snipping Tool instead, turn it off in
 > *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
-> Other screenshot apps (Greenshot, ShareX, Lightshot) can also hold PrtSc — close them or change their hotkey.
+> Other screenshot apps (Greenshot, ShareX, Lightshot) can also hold PrtSc — close them, or pick another hotkey in Snapclick's Settings.
 
 ## Settings
 
@@ -35,7 +37,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 | Save folder | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) |
-| Hotkey | PrtSc (fixed in v1) |
+| Hotkey | PrtSc — click it to record another combo: F1–F12, or any key with Ctrl/Alt/Win. **Reset** goes back to PrtSc |
 | Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Save and Retake buttons) |
 | Start with Windows | Off |
 

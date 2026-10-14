@@ -7,6 +7,8 @@ import winreg
 from datetime import datetime
 from pathlib import Path
 
+from snapclick.hotkey import DEFAULT_HOTKEY
+
 SETTINGS_FILE = Path(os.environ["APPDATA"]) / "Snapclick" / "settings.json"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -16,6 +18,7 @@ DEFAULTS = {
     "format": "png",  # "png" or "jpg"
     "show_preview": False,
     "start_with_windows": False,
+    "hotkey": DEFAULT_HOTKEY,  # {"vk": key code, "mods": Win32 modifier flags, "name": "PrtSc"}
 }
 
 

@@ -15,7 +15,6 @@ from snapclick.settings_window import SettingsWindow
 DARK_TASKBAR_COLOR = "#FFB000"
 LIGHT_TASKBAR_COLOR = "#7A4E00"
 ICON_SIZES = (16, 20, 24, 32)
-TOOLTIP = "Snapclick — PrtSc to capture"
 
 
 def taskbar_is_light():
@@ -74,10 +73,11 @@ class Tray(QSystemTrayIcon):
         self.capture = None  # the running capture, if any
         self.settings_window = None
         self.preview = None
-        self.undo = None  # what the preview's ✕ needs to undo the last capture
+        self.undo = None  # what the preview's Retake needs to undo the last capture
+        self.hotkey = None  # GlobalHotkey, set by main
         self.light = taskbar_is_light()
         self.setIcon(make_icon(self.light))
-        self.setToolTip(TOOLTIP)
+        self.update_tooltip()
         self.setContextMenu(self._build_menu())
         self.activated.connect(self._on_click)
 
@@ -104,6 +104,12 @@ class Tray(QSystemTrayIcon):
         self._menu = menu  # keep a reference so Qt does not delete it
         return menu
 
+    def update_tooltip(self):
+        if self.hotkey and self.hotkey.registered:
+            self.setToolTip(f"Snapclick — {self.hotkey.hotkey['name']} to capture")
+        else:
+            self.setToolTip("Snapclick — hotkey taken, click to capture")
+
     def _check_theme(self):
         light = taskbar_is_light()
         if light != self.light:
@@ -117,7 +123,7 @@ class Tray(QSystemTrayIcon):
     def start_capture(self, frozen=None):
         if self.capture:  # already capturing: ignore a second PrtSc
             return
-        self.close_preview()  # its ✕ must not undo a newer capture
+        self.close_preview()  # its Retake must not undo a newer capture
         self.capture = Capture(frozen)
         self.capture.captured.connect(self._captured)
         self.capture.finished.connect(self._capture_done)
@@ -193,7 +199,8 @@ class Tray(QSystemTrayIcon):
 
     def open_settings(self):
         if self.settings_window is None or not self.settings_window.isVisible():
-            self.settings_window = SettingsWindow()
+            self.settings_window = SettingsWindow(self.hotkey)
+            self.settings_window.hotkey_changed.connect(self.update_tooltip)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()

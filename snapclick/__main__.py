@@ -10,7 +10,7 @@ from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from snapclick import settings
-from snapclick.hotkey import PrtScHotkey, snipping_tool_owns_prtsc
+from snapclick.hotkey import VK_SNAPSHOT, GlobalHotkey, snipping_tool_owns_prtsc
 from snapclick.tray import Tray, make_icon
 
 ERROR_ALREADY_EXISTS = 183
@@ -26,8 +26,8 @@ SNIPPING_TOOL_HELP = (
 
 OTHER_APP_HELP = (
     "Another app (for example Greenshot, ShareX or Lightshot) is already using "
-    "the PrtSc key, so Snapclick can't use it.\n\n"
-    "Close that app or change its hotkey, then restart Snapclick.\n\n"
+    "{name}, so Snapclick can't use it.\n\n"
+    "Pick another hotkey in Snapclick → Settings, or close that app and restart Snapclick.\n\n"
     "Until then, left-click the Snapclick tray icon to capture."
 )
 
@@ -45,12 +45,13 @@ def already_running():
     return kernel32.GetLastError() == ERROR_ALREADY_EXISTS
 
 
-def warn_once_if_prtsc_taken(hotkey):
-    """Explain how to free PrtSc. Shown only the first time."""
-    if snipping_tool_owns_prtsc():
+def warn_once_if_hotkey_taken(hotkey):
+    """Explain how to free the hotkey. Shown only the first time."""
+    is_prtsc = hotkey.hotkey["vk"] == VK_SNAPSHOT and hotkey.hotkey["mods"] == 0
+    if is_prtsc and snipping_tool_owns_prtsc():
         text = SNIPPING_TOOL_HELP
     elif not hotkey.registered:
-        text = OTHER_APP_HELP
+        text = OTHER_APP_HELP.format(name=hotkey.hotkey["name"])
     else:
         return
     prefs = settings.load()
@@ -73,9 +74,10 @@ def main():
     tray = Tray(app)
     tray.show()
 
-    hotkey = PrtScHotkey(app, tray.start_capture)
-    app.aboutToQuit.connect(hotkey.unregister)
-    warn_once_if_prtsc_taken(hotkey)
+    tray.hotkey = GlobalHotkey(app, tray.start_capture, settings.load()["hotkey"])
+    tray.update_tooltip()
+    app.aboutToQuit.connect(tray.hotkey.unregister)
+    warn_once_if_hotkey_taken(tray.hotkey)
     if settings.load()["start_with_windows"]:
         settings.set_start_with_windows(True)  # keep the path current if the app moved
 
