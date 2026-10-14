@@ -33,6 +33,16 @@ Rules:
 | Magnifier | Square box (~120 px) next to the cursor, showing the pixels under the mouse zoomed 4× (sharp, no smoothing); background `#0D0E10`, 1 px border `#34363B`, thin amber (accent) crosshair in the middle. Sits bottom-right of the cursor; moves to the other side when near the screen edge. |
 | Before click 1 | Only crosshair + magnifier + hint `[click] 1st corner   [esc] cancel` |
 
+### Preview thumbnail (when "Show preview after capture" is on)
+
+- Appears bottom-right for 3 s after a capture.
+- Stays visible while the mouse is over it; closes 3 s after the mouse leaves.
+- Small **✕** button in its top-right corner (style B: square, `#0D0E10` background, 1 px `#34363B` border, `#C9C9C4` ✕; accent background with black ✕ on hover). Clicking ✕ = **undo and retake**:
+  1. Restores the clipboard to what it was before this capture (only if nothing else was copied since — never overwrite a newer copy).
+  2. Deletes the auto-saved file, if one was written.
+  3. Reopens the selection overlay on the **same frozen screen**, starting again from corner 1.
+- Starting a new capture closes the previous preview.
+
 ## 3. Tray
 
 - Icon: **corner brackets** (4 L-shaped corners, square line caps).
