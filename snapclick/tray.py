@@ -5,6 +5,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from snapclick.capture import Capture
+
 DARK_TASKBAR_COLOR = "#FFB000"
 LIGHT_TASKBAR_COLOR = "#7A4E00"
 ICON_SIZES = (16, 20, 24, 32)
@@ -64,6 +66,7 @@ class Tray(QSystemTrayIcon):
     def __init__(self, app):
         super().__init__()
         self.app = app
+        self.capture = None  # the running capture, if any
         self.light = taskbar_is_light()
         self.setIcon(make_icon(self.light))
         self.setToolTip(TOOLTIP)
@@ -103,5 +106,10 @@ class Tray(QSystemTrayIcon):
             self.start_capture()
 
     def start_capture(self):
-        # Placeholder until the capture overlay is built in step 3.
-        self.showMessage("Snapclick", "Capture started (overlay comes in step 3).")
+        if self.capture:  # already capturing: ignore a second PrtSc
+            return
+        self.capture = Capture()
+        self.capture.finished.connect(self._capture_done)
+
+    def _capture_done(self):
+        self.capture = None
