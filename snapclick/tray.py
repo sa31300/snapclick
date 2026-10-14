@@ -68,6 +68,7 @@ class Tray(QSystemTrayIcon):
         self.setIcon(make_icon(self.light))
         self.setToolTip(TOOLTIP)
         self.setContextMenu(self._build_menu())
+        self.activated.connect(self._on_click)
 
         # Check the taskbar theme every 2 s and swap the icon if it changed.
         self.theme_timer = QTimer(self)
@@ -76,8 +77,11 @@ class Tray(QSystemTrayIcon):
 
     def _build_menu(self):
         menu = QMenu()
-        # Capture, Settings and Open save folder are wired up in later steps.
-        for label in ("Capture", "Settings…", "Open save folder"):
+        capture_action = QAction("Capture", menu)
+        capture_action.triggered.connect(self.start_capture)
+        menu.addAction(capture_action)
+        # Settings and Open save folder are wired up in later steps.
+        for label in ("Settings…", "Open save folder"):
             action = QAction(label, menu)
             action.setEnabled(False)
             menu.addAction(action)
@@ -93,3 +97,11 @@ class Tray(QSystemTrayIcon):
         if light != self.light:
             self.light = light
             self.setIcon(make_icon(light))
+
+    def _on_click(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:  # left-click
+            self.start_capture()
+
+    def start_capture(self):
+        # Placeholder until the capture overlay is built in step 3.
+        self.showMessage("Snapclick", "Capture started (overlay comes in step 3).")
