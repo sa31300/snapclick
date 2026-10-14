@@ -1,7 +1,9 @@
 """Snapclick entry point. Run with: python -m snapclick"""
 import ctypes
 import sys
+from pathlib import Path
 
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from snapclick import settings
@@ -25,6 +27,12 @@ OTHER_APP_HELP = (
     "Close that app or change its hotkey, then restart Snapclick.\n\n"
     "Until then, left-click the Snapclick tray icon to capture."
 )
+
+
+def load_fonts():
+    """Register the bundled fonts so the app looks the same on every PC."""
+    for font_file in (Path(__file__).parent / "fonts").glob("*.ttf"):
+        QFontDatabase.addApplicationFont(str(font_file))
 
 
 def already_running():
@@ -56,6 +64,7 @@ def main():
         QMessageBox.information(None, "Snapclick", "Snapclick is already running (see the tray).")
         return
 
+    load_fonts()
     app.setQuitOnLastWindowClosed(False)  # tray app: keep running with no windows
     tray = Tray(app)
     tray.show()

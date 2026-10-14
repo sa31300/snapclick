@@ -7,11 +7,21 @@ import ctypes
 from ctypes import wintypes
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+# Style B (see docs/SPEC.md, section 2). Sizes are in screen points; they are
+# multiplied by the monitor's scale when drawn.
 ACCENT = QColor("#FFB000")
+CROSSHAIR = QColor(255, 176, 0, round(255 * 0.6))  # accent at 60%
 DIM = QColor(0, 0, 0, round(255 * 0.62))  # black at 62%
+HINT_TEXT = QColor("#C9C9C4")
+HINT_BG = QColor("#0D0E10")
+HINT_BORDER = QColor("#34363B")
+MONO = "JetBrains Mono"
+FONT_SIZE = 12
+MAGNIFIER_SIZE = 120
+ZOOM = 4
 
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
@@ -83,6 +93,7 @@ class Capture(QObject):
         focused = next((o for o in self.overlays if o.screen() == mouse_screen), self.overlays[0])
         focused.activateWindow()
         focused.setFocus()
+        self.move(focused.to_physical(focused.mapFromGlobal(QCursor.pos())))
 
     def selection(self):
         """Normalized rectangle between corner 1 and the cursor (any direction)."""
@@ -93,9 +104,16 @@ class Capture(QObject):
         return QRect(left, top, right - left, bottom - top)
 
     def move(self, point):
+        # Repaint only the monitors touched by the old or new cursor/selection.
+        changed = [p for p in (self.cursor, point) if p is not None]
+        if self.first is not None:
+            changed = [QRect(self.first, p).normalized().adjusted(-1, -1, 1, 1) for p in changed]
+        else:
+            changed = [QRect(p, p) for p in changed]
         self.cursor = point
         for overlay in self.overlays:
-            overlay.update()
+            if any(overlay.area.intersects(rect) for rect in changed):
+                overlay.update()
 
     def click(self, point):
         if self.first is None:
@@ -123,7 +141,10 @@ class Overlay(QWidget):
                          | Qt.WindowType.Tool)
         self.capture = capture
         self.area = physical_rect(screen)  # this monitor, real pixels
-        self.frozen = capture.image.copy(self.area.translated(-capture.origin))
+        self.dimmed = capture.image.copy(self.area.translated(-capture.origin))
+        p = QPainter(self.dimmed)
+        p.fillRect(self.dimmed.rect(), DIM)
+        p.end()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -137,22 +158,110 @@ class Overlay(QWidget):
         s = self.scale()
         return QPoint(self.area.x() + int(pos.x() * s), self.area.y() + int(pos.y() * s))
 
-    def to_local(self, rect):
-        """Real-pixel rectangle -> this window's coordinates."""
+    def font(self, semibold=False):
+        font = QFont(MONO)
+        font.setPixelSize(round(FONT_SIZE * self.scale()))
+        if semibold:
+            font.setWeight(QFont.Weight.DemiBold)
+        return font
+
+    def label(self, p, text, font, x, y, fg, bg, border=None):
+        """Text in a box whose top-left is (x, y), kept inside this monitor."""
         s = self.scale()
-        r = rect.translated(-self.area.topLeft())
-        return QRectF(r.x() / s, r.y() / s, r.width() / s, r.height() / s)
+        metrics = QFontMetrics(font)
+        pad_x, pad_y = round(6 * s), round(3 * s)
+        box = QRect(0, 0, metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y)
+        box.moveTo(min(max(x, self.area.left()), self.area.right() + 1 - box.width()),
+                   min(max(y, self.area.top()), self.area.bottom() + 1 - box.height()))
+        if bg:
+            p.fillRect(box, bg)
+        if border:
+            p.setPen(QPen(border, 1))
+            p.drawRect(box.adjusted(0, 0, -1, -1))
+        p.setFont(font)
+        p.setPen(fg)
+        p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+
+    def draw_magnifier(self, p, cursor):
+        s = self.scale()
+        half = round(MAGNIFIER_SIZE / ZOOM / 2 * s)  # real pixels on each side of the cursor
+        source = QRect(cursor.x() - half, cursor.y() - half, 2 * half + 1, 2 * half + 1)
+        box_size = source.width() * ZOOM
+        gap = round(24 * s)
+        # Bottom-right of the cursor; flip to the other side near an edge.
+        x = cursor.x() + gap
+        if x + box_size > self.area.right():
+            x = cursor.x() - gap - box_size
+        y = cursor.y() + gap
+        if y + box_size > self.area.bottom():
+            y = cursor.y() - gap - box_size
+        box = QRect(x, y, box_size, box_size)
+
+        p.fillRect(box, HINT_BG)  # shows where the zoom goes past the desktop edge
+        pixels = self.capture.image.copy(source.translated(-self.capture.origin))
+        p.drawImage(box, pixels)  # no smoothing: each pixel becomes a sharp 4x4 square
+        middle = half * ZOOM + ZOOM // 2
+        p.setPen(QPen(ACCENT, 1))
+        p.drawLine(x + middle, y, x + middle, y + box_size - 1)
+        p.drawLine(x, y + middle, x + box_size - 1, y + middle)
+        p.setPen(QPen(HINT_BORDER, 1))
+        p.drawRect(box.adjusted(-1, -1, 0, 0))
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.drawImage(QRectF(self.rect()), self.frozen)
-        p.fillRect(self.rect(), DIM)
-        area = self.capture.selection()
-        if area and area.intersects(self.area):
-            part = area.intersected(self.area)
-            p.drawImage(self.to_local(part), self.frozen, QRectF(part.translated(-self.area.topLeft())))
-            p.setPen(QPen(ACCENT, 1))
-            p.drawRect(self.to_local(area))
+        # Draw on an image the size of the monitor in real pixels, so 1 px
+        # lines stay sharp at any scaling. Coordinates are desktop pixels.
+        s = self.scale()
+        line = max(1, int(s))
+        capture = self.capture
+        area = self.area
+        canvas = QImage(area.size(), QImage.Format.Format_RGB32)
+        p = QPainter(canvas)
+        p.translate(-area.topLeft())
+
+        p.drawImage(area.topLeft(), self.dimmed)
+        selection = capture.selection()
+        if selection:
+            p.drawImage(selection.topLeft(), capture.image, selection.translated(-capture.origin))
+
+        cursor = capture.cursor
+        cursor_here = cursor is not None and area.contains(cursor)
+        if cursor_here:
+            p.setPen(QPen(CROSSHAIR, line))
+            p.drawLine(area.left(), cursor.y(), area.right(), cursor.y())
+            p.drawLine(cursor.x(), area.top(), cursor.x(), area.bottom())
+
+        if selection:
+            pen = QPen(ACCENT, line, Qt.PenStyle.CustomDashLine)
+            pen.setDashPattern([4, 3])
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(selection)
+
+        first = capture.first
+        if first is not None and area.contains(first):
+            text = f"x {first.x() - capture.origin.x()}  y {first.y() - capture.origin.y()}"
+            height = QFontMetrics(self.font()).height() + round(6 * s)
+            self.label(p, text, self.font(), first.x() - round(6 * s), first.y() - height - round(4 * s),
+                       ACCENT, None)
+
+        if selection:
+            corner = QPoint(selection.x() + selection.width(), selection.y() + selection.height())
+            if area.contains(corner):
+                text = f"{selection.width()}×{selection.height()}"
+                font = self.font(semibold=True)
+                width = QFontMetrics(font).horizontalAdvance(text) + round(12 * s)
+                self.label(p, text, font, corner.x() - width, corner.y() + round(6 * s),
+                           QColor("black"), ACCENT)
+
+        if cursor_here:
+            step = "2nd" if first is not None else "1st"
+            margin = round(16 * s)
+            self.label(p, f"[click] {step} corner   [esc] cancel", self.font(),
+                       area.left() + margin, area.top() + margin, HINT_TEXT, HINT_BG, HINT_BORDER)
+            self.draw_magnifier(p, cursor)
+
+        p.end()
+        QPainter(self).drawImage(QRectF(self.rect()), canvas)
 
     def mouseMoveEvent(self, event):
         self.capture.move(self.to_physical(event.position()))
