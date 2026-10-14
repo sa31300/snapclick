@@ -3,6 +3,9 @@ import ctypes
 import sys
 from pathlib import Path
 
+if not __package__:  # started as a plain script (Start with Windows, .exe)
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -72,6 +75,8 @@ def main():
     hotkey = PrtScHotkey(app, tray.start_capture)
     app.aboutToQuit.connect(hotkey.unregister)
     warn_once_if_prtsc_taken(hotkey)
+    if settings.load()["start_with_windows"]:
+        settings.set_start_with_windows(True)  # keep the path current if the app moved
 
     sys.exit(app.exec())
 

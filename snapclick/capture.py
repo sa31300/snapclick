@@ -78,6 +78,7 @@ def physical_rect(screen):
 class Capture(QObject):
     """One capture session: an overlay on every monitor sharing one selection."""
 
+    captured = Signal(QImage)  # the selected area, after it is copied
     finished = Signal()
 
     def __init__(self):
@@ -125,6 +126,9 @@ class Capture(QObject):
         if area.width() > 0 and area.height() > 0:  # 0 px cancels
             crop = self.image.copy(area.translated(-self.origin))
             QGuiApplication.clipboard().setImage(crop)
+            self.close()
+            self.captured.emit(crop)
+            return
         self.close()
 
     def close(self):

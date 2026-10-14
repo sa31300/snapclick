@@ -1,11 +1,16 @@
 """Tray icon: corner brackets that follow the Windows taskbar theme."""
+import os
 import winreg
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from snapclick import settings
 from snapclick.capture import Capture
+from snapclick.preview import Preview
+from snapclick.settings_window import SettingsWindow
 
 DARK_TASKBAR_COLOR = "#FFB000"
 LIGHT_TASKBAR_COLOR = "#7A4E00"
@@ -67,6 +72,8 @@ class Tray(QSystemTrayIcon):
         super().__init__()
         self.app = app
         self.capture = None  # the running capture, if any
+        self.settings_window = None
+        self.preview = None
         self.light = taskbar_is_light()
         self.setIcon(make_icon(self.light))
         self.setToolTip(TOOLTIP)
@@ -83,11 +90,12 @@ class Tray(QSystemTrayIcon):
         capture_action = QAction("Capture", menu)
         capture_action.triggered.connect(self.start_capture)
         menu.addAction(capture_action)
-        # Settings and Open save folder are wired up in later steps.
-        for label in ("Settings…", "Open save folder"):
-            action = QAction(label, menu)
-            action.setEnabled(False)
-            menu.addAction(action)
+        settings_action = QAction("Settings…", menu)
+        settings_action.triggered.connect(self.open_settings)
+        menu.addAction(settings_action)
+        folder_action = QAction("Open save folder", menu)
+        folder_action.triggered.connect(self.open_save_folder)
+        menu.addAction(folder_action)
         menu.addSeparator()
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self.app.quit)
@@ -109,7 +117,42 @@ class Tray(QSystemTrayIcon):
         if self.capture:  # already capturing: ignore a second PrtSc
             return
         self.capture = Capture()
+        self.capture.captured.connect(self._captured)
         self.capture.finished.connect(self._capture_done)
 
     def _capture_done(self):
         self.capture = None
+
+    def _captured(self, image):
+        prefs = settings.load()
+        if prefs["auto_save"]:
+            self.save_image(image, prefs)
+        if prefs["show_preview"]:
+            self.preview = Preview(image)
+
+    def save_image(self, image, prefs):
+        try:
+            folder = Path(prefs["save_folder"])
+            folder.mkdir(parents=True, exist_ok=True)
+            path = settings.new_file_path(folder, prefs["format"])
+            if prefs["format"] == "jpg":
+                ok = image.save(str(path), "JPG", 90)
+            else:
+                ok = image.save(str(path), "PNG")
+        except OSError:
+            ok = False
+        if not ok:
+            self.showMessage("Snapclick", f"Could not save to {prefs['save_folder']}.\n"
+                             "The image is still in your clipboard.", QSystemTrayIcon.MessageIcon.Warning)
+
+    def open_settings(self):
+        if self.settings_window is None or not self.settings_window.isVisible():
+            self.settings_window = SettingsWindow()
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
+
+    def open_save_folder(self):
+        folder = Path(settings.load()["save_folder"])
+        folder.mkdir(parents=True, exist_ok=True)
+        os.startfile(folder)
