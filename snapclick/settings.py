@@ -62,11 +62,17 @@ def start_command():
 
 
 def set_start_with_windows(on):
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
-        if on:
-            winreg.SetValueEx(key, "Snapclick", 0, winreg.REG_SZ, start_command())
-        else:
-            try:
-                winreg.DeleteValue(key, "Snapclick")
-            except FileNotFoundError:
-                pass
+    """Add or remove Snapclick in the Windows startup list.
+    Returns False if Windows (or an antivirus) blocked it."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if on:
+                winreg.SetValueEx(key, "Snapclick", 0, winreg.REG_SZ, start_command())
+            else:
+                try:
+                    winreg.DeleteValue(key, "Snapclick")
+                except FileNotFoundError:
+                    pass
+    except OSError:
+        return False
+    return True

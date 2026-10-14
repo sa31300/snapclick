@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QVBoxLayout, QWidget)
+                               QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
 from snapclick import settings
 from snapclick.hotkey import (DEFAULT_HOTKEY, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, combo_name,
@@ -232,9 +232,9 @@ class SettingsWindow(QWidget):
         self.add_row(rows, "Show preview after capture", preview)
 
         # Start with Windows
-        startup = Toggle(self.prefs["start_with_windows"])
-        startup.toggled.connect(self.set_startup)
-        self.add_row(rows, "Start with Windows", startup, last=True)
+        self.startup = Toggle(self.prefs["start_with_windows"])
+        self.startup.toggled.connect(self.set_startup)
+        self.add_row(rows, "Start with Windows", self.startup, last=True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 16)
@@ -295,7 +295,12 @@ class SettingsWindow(QWidget):
         self.setFixedHeight(self.sizeHint().height())  # grow/shrink for the message line
 
     def set_startup(self, on):
-        settings.set_start_with_windows(on)
+        if not settings.set_start_with_windows(on):
+            QMessageBox.warning(self, "Snapclick", "Windows (or your antivirus) blocked changing the startup list.")
+            self.startup.blockSignals(True)
+            self.startup.setChecked(not on)  # show what really happened
+            self.startup.blockSignals(False)
+            return
         self.set("start_with_windows", on)
 
     def browse(self):
