@@ -37,10 +37,19 @@ Rules:
 
 - Appears bottom-right for 3 s after a capture.
 - Stays visible while the mouse is over it; closes 3 s after the mouse leaves.
-- Small **✕** button in its top-right corner (style B: square, `#0D0E10` background, 1 px `#34363B` border, `#C9C9C4` ✕; accent background with black ✕ on hover). Clicking ✕ = **undo and retake**:
+- Layout: the image, and a one-line **label** below it (mono, muted `#A3A39E`). Default label: `copied to clipboard`, or `saved · <file name>` if auto-save wrote a file.
+- Small square buttons in the top-right corner of the image (style B: `#0D0E10` background, 1 px `#34363B` border, `#C9C9C4` icon):
+
+| Button | Icon | Hover | Click |
+|---|---|---|---|
+| **Save** (only when auto-save is **off**; left of Retake) | arrow into a tray | Button turns baby blue `#8FD3FF` (black icon); label shows the save folder (in baby blue) | Saves the file (same folder, name and format rules as auto-save). Feedback: a quick white flash on the image, the icon turns into a green `#3DDC97` check, one green glow pulse around the button, label shows `saved ✓ <file name>` in green. After that the button stays a green check and does nothing (no duplicate files). |
+| **Retake** | back arrow | Button turns amber `#FFB000` (black icon); the image gets a light amber tint; label shows `retake · undo copy` (in amber) | **Undo and retake** (below) |
+
+- **Undo and retake**:
   1. Restores the clipboard to what it was before this capture (only if nothing else was copied since — never overwrite a newer copy).
-  2. Deletes the auto-saved file, if one was written.
+  2. Deletes the saved file, if one was written (by auto-save or by the Save button).
   3. Reopens the selection overlay on the **same frozen screen**, starting again from corner 1.
+- If saving fails, the label shows `save failed` and the tray shows a warning.
 - Starting a new capture closes the previous preview.
 
 ## 3. Tray
