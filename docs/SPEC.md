@@ -30,7 +30,8 @@ Rules:
 | Start label | Above corner 1: `x 180  y 150` (mono, 12 px, accent color) |
 | Size badge | Below the bottom-right of the selection: `380×240`, mono 12 px semibold, black text on accent background |
 | Hint | Top-left of the screen where the mouse is: `[click] 2nd corner   [esc] cancel`; mono 12 px, `#C9C9C4` on `#0D0E10`, 1 px border `#34363B` |
-| Before click 1 | Only crosshair + hint `[click] 1st corner   [esc] cancel` |
+| Magnifier | Square box (~120 px) next to the cursor, showing the pixels under the mouse zoomed 4× (sharp, no smoothing); background `#0D0E10`, 1 px border `#34363B`, thin amber (accent) crosshair in the middle. Sits bottom-right of the cursor; moves to the other side when near the screen edge. |
+| Before click 1 | Only crosshair + magnifier + hint `[click] 1st corner   [esc] cancel` |
 
 ## 3. Tray
 
