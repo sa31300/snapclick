@@ -199,8 +199,7 @@ class Tray(QSystemTrayIcon):
 
     def open_settings(self):
         if self.settings_window is None or not self.settings_window.isVisible():
-            self.settings_window = SettingsWindow(self.hotkey)
-            self.settings_window.hotkey_changed.connect(self.update_tooltip)
+            self.settings_window = SettingsWindow()
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()

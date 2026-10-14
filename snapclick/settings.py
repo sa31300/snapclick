@@ -18,7 +18,7 @@ DEFAULTS = {
     "format": "png",  # "png" or "jpg"
     "show_preview": False,
     "start_with_windows": False,
-    "hotkey": DEFAULT_HOTKEY,  # {"vk": key code, "mods": Win32 modifier flags, "name": "PrtSc"}
+    "hotkey": DEFAULT_HOTKEY,  # fixed to PrtSc (see load)
 }
 
 
@@ -29,6 +29,7 @@ def load():
         settings.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         pass
+    settings["hotkey"] = DEFAULT_HOTKEY  # the hotkey is not editable; ignore any saved one
     return settings
 
 

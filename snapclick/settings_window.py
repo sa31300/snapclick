@@ -2,14 +2,12 @@
 import ctypes
 from datetime import datetime
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
 from snapclick import settings
-from snapclick.hotkey import (DEFAULT_HOTKEY, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, combo_name,
-                              is_allowed)
 
 # Design tokens (docs/SPEC.md, section 5)
 BACKGROUND = "#0D0E10"
@@ -29,10 +27,6 @@ QLabel#title {{ font-size: 15px; font-weight: 500; }}
 QLabel#muted {{ color: {TEXT_MUTED}; font-size: 12px; }}
 QLabel#mono, QLabel#chip {{ font-family: "JetBrains Mono"; font-size: 12px; color: {TEXT_MUTED}; }}
 QLabel#chip {{ color: {TEXT}; border: 1px solid {BORDER}; padding: 2px 8px; background: {BACKGROUND}; }}
-QLabel#chip:hover {{ border-color: {TEXT_MUTED}; }}
-QLabel#chip[recording="true"] {{ color: {ACCENT}; border-color: {ACCENT}; }}
-QLabel#warning {{ color: {ACCENT}; font-size: 12px; }}
-QPushButton#small {{ padding: 2px 8px; font-size: 12px; color: {TEXT_MUTED}; }}
 QLineEdit {{ background: {BACKGROUND}; border: 1px solid {BORDER}; border-radius: 0; padding: 4px 6px;
              font-family: "JetBrains Mono"; font-size: 12px; }}
 QLineEdit:focus {{ border-color: {ACCENT}; }}
@@ -70,89 +64,9 @@ class Toggle(QAbstractButton):
             p.fillRect(knob, QColor(TEXT_MUTED))
 
 
-class HotkeyChip(QLabel):
-    """Shows the hotkey. Click it, then press a new key combo; Esc cancels."""
-
-    started = Signal()
-    recorded = Signal(int, int)  # Win32 key code, modifier flags
-    cancelled = Signal()
-
-    MODIFIER_KEYS = (Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta, Qt.Key.Key_AltGr)
-
-    def __init__(self, text):
-        super().__init__(text)
-        self.setObjectName("chip")
-        self.setFixedHeight(26)  # room for the mono text plus padding at any scaling
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.recording = False
-        self.shown = text
-
-    def show_hotkey(self, text):
-        """Stop recording and show `text`."""
-        if self.recording:
-            self.recording = False
-            self.releaseKeyboard()
-            self.set_recording_style(False)
-        self.shown = text
-        self.setText(text)
-
-    def set_recording_style(self, on):
-        self.setProperty("recording", on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def mousePressEvent(self, event):
-        if not self.recording:
-            self.recording = True
-            self.setText("press keys…")
-            self.set_recording_style(True)
-            self.setFocus()
-            self.grabKeyboard()  # get every key, even ones the window would use
-            self.started.emit()
-
-    def keyPressEvent(self, event):
-        if not self.recording:
-            return super().keyPressEvent(event)
-        if event.key() == Qt.Key.Key_Escape:
-            self.cancel()
-        elif event.key() not in self.MODIFIER_KEYS:  # wait for the real key
-            self.finish(event)
-
-    def keyReleaseEvent(self, event):
-        # Windows sends PrtSc only on key release.
-        if self.recording and event.key() == Qt.Key.Key_Print:
-            self.finish(event)
-
-    def focusOutEvent(self, event):
-        if self.recording:
-            self.cancel()
-        super().focusOutEvent(event)
-
-    def finish(self, event):
-        mods = 0
-        for qt_flag, win_flag in ((Qt.KeyboardModifier.ControlModifier, MOD_CONTROL),
-                                  (Qt.KeyboardModifier.AltModifier, MOD_ALT),
-                                  (Qt.KeyboardModifier.ShiftModifier, MOD_SHIFT),
-                                  (Qt.KeyboardModifier.MetaModifier, MOD_WIN)):  # Meta = Win key
-            if event.modifiers() & qt_flag:
-                mods |= win_flag
-        self.show_hotkey(self.shown)
-        self.recorded.emit(event.nativeVirtualKey(), mods)
-
-    def cancel(self):
-        self.show_hotkey(self.shown)
-        self.cancelled.emit()
-
-
 class SettingsWindow(QWidget):
-    hotkey_changed = Signal()
-
-    def __init__(self, hotkey):
-        """`hotkey`: the app's GlobalHotkey, so a new combo can be tried right away."""
+    def __init__(self):
         super().__init__()
-        self.hotkey = hotkey
         self.prefs = settings.load()
         self.setWindowTitle("Snapclick settings")
         self.setStyleSheet(STYLE)
@@ -202,29 +116,12 @@ class SettingsWindow(QWidget):
             format_row.addWidget(button)
         self.add_row(rows, "Format", format_row)
 
-        # Hotkey: click the chip to record a new combo; Reset = PrtSc
-        self.chip = HotkeyChip(self.hotkey.hotkey["name"])
-        self.chip.started.connect(self.hotkey.pause)  # so pressing it now doesn't capture
-        self.chip.started.connect(lambda: self.show_hotkey_warning(""))
-        self.chip.cancelled.connect(self.hotkey.resume)
-        self.chip.recorded.connect(self.record_hotkey)
-        reset = QPushButton("Reset")
-        reset.setObjectName("small")
-        reset.setFixedHeight(26)
-        reset.setToolTip("Back to PrtSc")
-        reset.clicked.connect(lambda: self.apply_hotkey(dict(DEFAULT_HOTKEY)))
-        self.hotkey_warning = QLabel()
-        self.hotkey_warning.setObjectName("warning")
-        self.hotkey_warning.hide()
-        chip_row = QHBoxLayout()
-        chip_row.setSpacing(6)
-        chip_row.addWidget(self.chip)
-        chip_row.addWidget(reset)
-        hotkey_box = QVBoxLayout()
-        hotkey_box.setSpacing(4)
-        hotkey_box.addLayout(chip_row)
-        hotkey_box.addWidget(self.hotkey_warning, 0, Qt.AlignmentFlag.AlignRight)
-        self.add_row(rows, "Hotkey", hotkey_box)
+        # Hotkey (fixed: PrtSc)
+        chip = QLabel("PrtSc")
+        chip.setObjectName("chip")
+        chip.setFixedHeight(26)  # room for the mono text plus padding at any scaling
+        chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.add_row(rows, "Hotkey", chip)
 
         # Preview
         preview = Toggle(self.prefs["show_preview"])
@@ -271,28 +168,6 @@ class SettingsWindow(QWidget):
         self.prefs[key] = value
         settings.save(self.prefs)
         self.update_file_name()
-
-    def record_hotkey(self, vk, mods):
-        if not is_allowed(vk, mods):
-            self.hotkey.resume()
-            self.show_hotkey_warning("not allowed — add Ctrl, Alt or Win")
-            return
-        self.apply_hotkey({"vk": vk, "mods": mods, "name": combo_name(vk, mods)})
-
-    def apply_hotkey(self, new):
-        """Use `new` if Windows accepts it; otherwise keep the old one."""
-        if self.hotkey.change(new):
-            self.set("hotkey", new)
-            self.show_hotkey_warning("")
-        else:
-            self.show_hotkey_warning("taken by another app")
-        self.chip.show_hotkey(self.hotkey.hotkey["name"])
-        self.hotkey_changed.emit()
-
-    def show_hotkey_warning(self, text):
-        self.hotkey_warning.setText(text)
-        self.hotkey_warning.setVisible(bool(text))
-        self.setFixedHeight(self.sizeHint().height())  # grow/shrink for the message line
 
     def set_startup(self, on):
         if not settings.set_start_with_windows(on):
