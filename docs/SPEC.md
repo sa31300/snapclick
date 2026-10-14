@@ -5,7 +5,7 @@ A tiny Windows tray app: press PrtSc, click two corners, the image is in your cl
 ## 1. User flow
 
 1. Snapclick runs in the Windows tray (optional: starts with Windows).
-2. User presses **PrtSc** (or left-clicks the tray icon).
+2. User presses the **hotkey** — **PrtSc** by default, changeable in Settings — (or left-clicks the tray icon).
 3. A full-screen overlay appears on **all monitors**. The screen is dimmed.
 4. **Click 1** (left button) = first corner of the rectangle.
 5. Moving the mouse shows the live rectangle.
@@ -17,7 +17,7 @@ Rules:
 - Corners can be clicked in any order or direction (top-left → bottom-right, or bottom-right → top-left, etc.). Always normalize.
 - **Esc** or **right-click** cancels at any time. Nothing is copied.
 - A selection of 0 px width or height cancels.
-- The captured image is the screen **as it was when PrtSc was pressed** (freeze the screen first, then show the overlay on top of the frozen image).
+- The captured image is the screen **as it was when the hotkey was pressed** (freeze the screen first, then show the overlay on top of the frozen image).
 - Capture in **real pixels**: correct on high-DPI screens (125%, 150% scaling) and across monitors with different scaling.
 
 ## 2. Overlay look (style "B · Utility")
@@ -49,6 +49,7 @@ Rules:
   1. Restores the clipboard to what it was before this capture (only if nothing else was copied since — never overwrite a newer copy).
   2. Deletes the saved file, if one was written (by auto-save or by the Save button).
   3. Reopens the selection overlay on the **same frozen screen**, starting again from corner 1.
+- **File name link**: whenever the label shows a saved file name (`saved ✓ <file name>` or `saved · <file name>`), the file name is a link: underlined on hover (hand cursor); click opens File Explorer with that file selected.
 - If saving fails, the label shows `save failed` and the tray shows a warning.
 - Starting a new capture closes the previous preview.
 
@@ -61,7 +62,7 @@ Rules:
   - Must be crisp at 16 px (provide 16, 20, 24, 32 px sizes in the .ico).
 - Left-click: start a capture.
 - Right-click menu: **Capture** · **Settings…** · **Open save folder** · **Quit**.
-- Tooltip: `Snapclick — PrtSc to capture`.
+- Tooltip: `Snapclick — <hotkey> to capture` (e.g. `Snapclick — PrtSc to capture`). If the hotkey could not be registered: `Snapclick — hotkey taken, click to capture`.
 
 ## 4. Settings window
 
@@ -73,13 +74,23 @@ Opened from the tray menu. Small fixed window (about 380 px wide), dark, style B
 | Save folder | text + "Browse" button | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | read-only preview | `YYYY-MM-DD_HH-MM-SS.png`, e.g. `2026-10-14_18-12-05.png` |
 | Format | PNG / JPG switch | PNG |
-| Hotkey | shown as chip | `PrtSc` (not editable in v1) |
+| Hotkey | chip + small **Reset** button | `PrtSc` — editable (see below) |
 | Show preview after capture | toggle | off — when on, a small thumbnail appears bottom-right for 3 s |
 | Start with Windows | toggle | off |
 
 - Settings save immediately (no "Save" button).
 - Stored in `%APPDATA%\Snapclick\settings.json`.
 - If two captures land in the same second, add `_2`, `_3`.
+
+### Editing the hotkey
+
+1. Click the chip → it shows `press keys…` (accent border). The current hotkey is paused while recording.
+2. Press the new combo. Modifier keys alone don't end recording; the first non-modifier key does.
+3. **Esc** cancels (Esc itself can't be a hotkey). Clicking elsewhere also cancels.
+4. **Allowed**: PrtSc or F1–F12 (alone or with any modifiers), or any other key together with **Ctrl, Alt or Win** (Shift may be added). **Refused**: plain keys (letters, numbers, symbols, Space…) and Shift + such a key (it would block typing). A refused combo shows `not allowed — add Ctrl, Alt or Win` under the chip; the old hotkey stays.
+5. If Windows can't register the combo (used by another app or by Windows), show `taken by another app` under the chip and keep the old one.
+6. On success the chip shows the new combo (e.g. `Ctrl+Shift+S`), it is saved to `settings.json`, and the tray tooltip updates.
+7. **Reset** sets it back to `PrtSc` (same check as above).
 
 ## 5. Design tokens
 
@@ -103,13 +114,13 @@ Both fonts are open-source (OFL): bundle them with the app.
 - Python 3.12, Windows 10/11 only.
 - **PySide6** (Qt) for overlay, tray and settings window.
 - Global hotkey via Win32 `RegisterHotKey` (through `ctypes`). No admin rights needed.
-- If PrtSc is already taken by Windows (Snipping Tool), show a one-time message explaining how to turn it off: *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" → Off*.
+- If the hotkey is PrtSc and Windows uses it for the Snipping Tool, show a one-time message explaining how to turn it off: *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" → Off*.
 - Only one instance can run at a time.
 - Package as a single `.exe` with PyInstaller; publish it as a GitHub Release.
 
 ## 7. Not in v1
 
-Annotations, blur, scrolling capture, editable hotkey, upload/sharing, OCR. (Ideas for later.)
+Annotations, blur, scrolling capture, upload/sharing, OCR. (Ideas for later.)
 
 ## 8. Done when
 
