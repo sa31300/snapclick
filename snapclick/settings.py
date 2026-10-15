@@ -1,5 +1,8 @@
 r"""Settings stored in %APPDATA%\Snapclick\settings.json, plus the helpers
-that act on them (file names, start with Windows)."""
+that act on them (file names, start with Windows).
+
+Test runs set SNAPCLICK_SETTINGS to another settings file. Then the Windows
+startup list is never touched."""
 import json
 import os
 import sys
@@ -9,7 +12,8 @@ from pathlib import Path
 
 from snapclick.hotkey import DEFAULT_HOTKEY
 
-SETTINGS_FILE = Path(os.environ["APPDATA"]) / "Snapclick" / "settings.json"
+TEST_SETTINGS = os.environ.get("SNAPCLICK_SETTINGS")  # test runs only
+SETTINGS_FILE = Path(TEST_SETTINGS or Path(os.environ["APPDATA"]) / "Snapclick" / "settings.json")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 DEFAULTS = {
@@ -65,6 +69,8 @@ def start_command():
 def set_start_with_windows(on):
     """Add or remove Snapclick in the Windows startup list.
     Returns False if Windows (or an antivirus) blocked it."""
+    if TEST_SETTINGS:
+        return True  # test run: only the test file changes
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if on:
