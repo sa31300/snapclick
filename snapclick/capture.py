@@ -47,7 +47,12 @@ def grab_desktop():
     """Screenshot of the whole virtual desktop in real pixels. Returns (image, origin)."""
     x, y = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)  # SM_X/YVIRTUALSCREEN
     w, h = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)  # SM_CX/CYVIRTUALSCREEN
+    return grab(QRect(x, y, w, h)), QPoint(x, y)
 
+
+def grab(rect):
+    """Screenshot of one area of the desktop (real pixels), as it is now."""
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
     screen_dc = user32.GetDC(None)
     mem_dc = gdi32.CreateCompatibleDC(screen_dc)
     bitmap = gdi32.CreateCompatibleBitmap(screen_dc, w, h)
@@ -64,8 +69,7 @@ def grab_desktop():
     gdi32.DeleteDC(mem_dc)
     user32.ReleaseDC(None, screen_dc)
 
-    image = QImage(buffer.raw, w, h, w * 4, QImage.Format.Format_RGB32).copy()
-    return image, QPoint(x, y)
+    return QImage(buffer.raw, w, h, w * 4, QImage.Format.Format_RGB32).copy()
 
 
 def save_clipboard():
