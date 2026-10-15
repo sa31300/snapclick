@@ -2,7 +2,11 @@
 
 A screen read of the frame is a list of pixel rows (bytes, 4 bytes per pixel).
 LongImage keeps everything seen in the frame, top to bottom, with no repeats,
-and knows which long-image row each frame row shows right now.
+and knows which long-image row each frame row shows right now. It grows at
+the bottom (scrolling down) and at the top (scrolling up, above piece 1).
+
+Long image layout: [header: piece 1's static top rows, like a title bar]
+[lines recorded above piece 1] [piece 1's lines] [lines recorded below].
 """
 from PySide6.QtGui import QImage
 
@@ -114,6 +118,8 @@ class LongImage:
         self.bottom = 0  # static rows at the bottom; cut off the end of piece 1
         self.static_known = False  # set on the first real movement
         self.piece1_end = self.height  # long row where piece 1 ends
+        self.header = 0  # piece 1's rows before its first line of text; lines above go after them
+        self.above = 0  # lines recorded above piece 1 so far
         self.pos = 0
         self.lost = False
         self.last_rows = first  # the last read that was found
@@ -125,6 +131,9 @@ class LongImage:
     def _hash_all(self):
         self.sigs = [self._sig(row) for row in self.rows]
         self.last = [self._sig(row) for row in self.last_rows]
+        self._index_all()
+
+    def _index_all(self):
         self.index = {}  # (block column, hash) -> long rows that have it
         for q, sig in enumerate(self.sigs):
             self._index(q, sig)
@@ -185,6 +194,15 @@ class LongImage:
         self.pos = best
         self.last, self.last_rows = sigs, rows
         self.lost = False
+        if best < 0:
+            # Frame rows above the first line after the header are new lines: add them there.
+            new = range(self.header, min(self.header - best, self.height - self.bottom))
+            self.rows[self.header:self.header] = [rows[r] for r in new]
+            self.sigs[self.header:self.header] = [sigs[r] for r in new]
+            self.pos = best = best + len(new)
+            self.piece1_end += len(new)
+            self.above += len(new)
+            self._index_all()
         # Frame rows below the end of the long image are new lines: add them.
         start = max(len(self.rows) - best, self.top)
         for r in range(start, self.height - self.bottom):
@@ -248,12 +266,15 @@ class LongImage:
         self.static_known = True
         self.top, self.bottom = top, bottom
         self.piece1_end = self.height - bottom
+        # Lines from above go right before piece 1's first non-blank row: blank rows
+        # under a title bar may be padding that never scrolls.
+        self.header = top
+        while self.header < self.piece1_end - 1 and all(b is None for b in self.sigs[self.header]):
+            self.header += 1
         if bottom:
             del self.rows[self.height - bottom:]
             del self.sigs[self.height - bottom:]
-            self.index = {}
-            for q, sig in enumerate(self.sigs):
-                self._index(q, sig)
+            self._index_all()
 
 
 def image_rows(image):

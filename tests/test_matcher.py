@@ -205,6 +205,51 @@ class MatcherTest(unittest.TestCase):
             self.assertTrue(long.add_read(terminal.view(top)))
         self.assert_joined(long, terminal, 890, slack=LINE)
 
+    def assert_above(self, long, terminal, first, highest, lowest, slack=LINE):
+        """Piece 1 was shown at `first`; then the user scrolled up to `highest` and down
+        to `lowest`. Long image = piece 1's rows before its first text row (title bar,
+        blank rows), then the document from there on, every line once."""
+        doc, edge = terminal.document, terminal.edge
+        title = len(terminal.title)
+        blank = long.header - title  # piece 1's blank rows above its first text row
+        self.assertGreaterEqual(blank, 0)
+        self.assertEqual(long.above, first - highest)
+        got = strip(long.rows, edge)
+        self.assertEqual(got[:long.header], strip(terminal.title + doc[first:first + blank], edge))
+        expected = strip(doc[highest + blank:lowest + CONTENT], edge)
+        rest = got[long.header:]
+        self.assertGreaterEqual(len(rest), len(expected) - slack)
+        self.assertEqual(rest, expected[:len(rest)])
+
+    def test_scroll_up_above_piece_1(self):
+        terminal = Terminal(make_document())
+        tops = list(range(800, 300, -9)) + list(range(300, 1200, 11))
+        long = self.run_scroll(terminal, tops)
+        self.assert_above(long, terminal, 800, 300, tops[-1])
+
+    def test_scroll_up_with_title_bar_and_scrollbar(self):
+        """The title bar stays at the top; lines from above go under it."""
+        terminal = Terminal(make_document(), title=30, scrollbar=True)
+        tops = list(range(900, 100, -3 * LINE)) + list(range(100, 1300, 3 * LINE))
+        long = self.run_scroll(terminal, tops)
+        self.assertGreaterEqual(long.header, 30)
+        self.assert_above(long, terminal, 900, 100, tops[-1])
+
+    def test_scroll_up_with_blank_rows_under_the_title_bar(self):
+        """Blank padding under the title bar never scrolls: lines from above go under it."""
+        terminal = Terminal(make_document())
+        terminal.title = make_title(20) + [BG * WIDTH] * 10
+        tops = list(range(900, 200, -3 * LINE)) + list(range(200, 1100, 3 * LINE))
+        long = self.run_scroll(terminal, tops)
+        self.assertGreaterEqual(long.header, 30)
+        self.assert_above(long, terminal, 900, 200, tops[-1])
+
+    def test_scroll_up_then_back_down_adds_nothing_twice(self):
+        terminal = Terminal(make_document())
+        tops = list(range(600, 400, -10)) + list(range(400, 700, 10)) + list(range(700, 300, -10))
+        long = self.run_scroll(terminal, tops)
+        self.assert_above(long, terminal, 600, 310, 700)
+
     def test_image_round_trip(self):
         rows = make_document(lines=4)
         self.assertEqual(image_rows(rows_image(rows, WIDTH)), rows)

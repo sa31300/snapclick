@@ -1,8 +1,9 @@
 """Stack: long captures made of several pieces (docs/SPEC.md §2b).
 
 The screen is live. Snapclick reads the frame many times a second and keeps a
-long image of everything that scrolled through it (see matcher.py). Each
-click adds the part from the end of the last piece down to the click.
+long image of everything that scrolled through it (see matcher.py). A click
+below the captured part adds the part from its end down to the click; a click
+above it adds the part from the click down to its start.
 
 Reading runs in a background thread: a screen read waits for the next screen
 refresh, and the overlay can be painted meanwhile.
@@ -142,7 +143,9 @@ class Stack(QObject):
         super().__init__()
         self.frame = frame
         self.long = LongImage(image_rows(first))
-        self.ends = []  # long-image row where piece 2, 3... end
+        # Pieces 2, 3...: ("below", end row) or ("above", start row). Rows are
+        # counted from long.above, so they stay right when lines are added above.
+        self.pieces = []
         self.cursor = None
         self.live = None  # (image, origin): the last screen read, frame and mouse area
         self.other_windows = list(other_windows)  # e.g. the preview
@@ -176,16 +179,23 @@ class Stack(QObject):
             self.timer.start(READ_MS)
 
     def count(self):
-        return 1 + len(self.ends)
+        return 1 + len(self.pieces)
+
+    def start(self):
+        """Long-image row where the captured part starts (after the header)."""
+        starts = [row for side, row in self.pieces if side == "above"]
+        return min(starts, default=self.long.header) + self.long.above
 
     def end(self):
         """Long-image row where the captured part ends."""
-        return self.ends[-1] if self.ends else self.long.piece1_end
+        ends = [row for side, row in self.pieces if side == "below"]
+        return max(ends) + self.long.above if ends else self.long.piece1_end
 
     def image(self):
-        """All pieces joined into one image."""
+        """All pieces joined into one image: header (title bar), then the captured part."""
         with self.lock:
-            return rows_image(self.long.rows[:self.end()], self.frame.width())
+            rows = self.long.rows
+            return rows_image(rows[:self.long.header] + rows[self.start():self.end()], self.frame.width())
 
     def grab_live(self, rect):
         if self.excluded:
@@ -235,6 +245,10 @@ class Stack(QObject):
         top = self.frame.top() + self.long.top
         return top, self.frame.top() + self.long.height - self.long.bottom
 
+    def start_y(self):
+        """Screen row of the start line (may be off the frame)."""
+        return self.frame.top() + self.start() - self.long.pos
+
     def end_y(self):
         """Screen row of the end line (may be off the frame)."""
         return self.frame.top() + self.end() - self.long.pos
@@ -247,18 +261,22 @@ class Stack(QObject):
         with self.lock:  # uses the last read, which is what the overlay shows
             if self.long.lost:
                 return
+            long = self.long
             top, bottom = self.content()
-            y = min(max(point.y(), top), bottom)  # below the frame = its bottom edge
-            new_end = min(self.long.pos + y - self.frame.top(), len(self.long.rows))
-        if new_end <= self.end():
-            return  # above the end of the captured part
-        self.ends.append(new_end)
+            y = min(max(point.y(), top), bottom)  # outside the frame = its nearest edge
+            row = min(max(long.pos + y - self.frame.top(), long.header), len(long.rows))
+            if row > self.end():
+                self.pieces.append(("below", row - long.above))
+            elif row < self.start():
+                self.pieces.append(("above", row - long.above))
+            else:
+                return  # inside the captured part
         self.update()
         self.changed.emit()
 
     def remove_last(self):
-        if self.ends:
-            self.ends.pop()
+        if self.pieces:
+            self.pieces.pop()
             self.update()
 
     def update(self, *areas):
@@ -346,9 +364,10 @@ class StackOverlay(QWidget):
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         top, bottom = stack.content()
-        end_y = stack.end_y()
+        start_y, end_y = stack.start_y(), stack.end_y()
         cursor = stack.cursor
-        shade = QRect(frame.left(), top, frame.width(), min(end_y, bottom) - top)
+        shade_top = max(start_y, top)
+        shade = QRect(frame.left(), shade_top, frame.width(), min(end_y, bottom) - shade_top)
         striped = not long.lost and shade.height() > 0
         if striped:
             self.draw_shade(p, shade, line)
@@ -370,18 +389,27 @@ class StackOverlay(QWidget):
             draw_label(p, "jumped too far · scroll back to the shade", font, tag_x, tag_y, LOST, HINT_BG,
                        area, s, LOST)
         else:
+            height = round(mono_font(s).pixelSize() * 1.4 + 6 * s)  # of a tag
             if top <= end_y <= bottom:
                 p.setPen(QPen(ACCENT, line))
                 p.drawLine(frame.left(), end_y, frame.right(), end_y)
                 text = "already captured ↑"
-                height = round(mono_font(s).pixelSize() * 1.4 + 6 * s)
                 draw_label(p, text, bold, frame.right() + 1 - label_width(text, bold, s), end_y - height,
                            QColor("black"), ACCENT, area, s)
             elif end_y < top:
                 draw_label(p, f"↑ + {top - end_y} px above, recorded while scrolling", font, tag_x, tag_y,
                            ACCENT, HINT_BG, area, s, ACCENT)
+            if top < start_y <= bottom:  # scrolled up: the start of the captured part is on screen
+                p.setPen(QPen(ACCENT, line))
+                p.drawLine(frame.left(), start_y, frame.right(), start_y)
+                text = "already captured ↓"
+                draw_label(p, text, bold, frame.right() + 1 - label_width(text, bold, s), start_y + line,
+                           QColor("black"), ACCENT, area, s)
+            elif start_y > bottom:
+                draw_label(p, f"↓ + {start_y - bottom} px below, recorded while scrolling", font, tag_x,
+                           bottom - height - round(6 * s), ACCENT, HINT_BG, area, s, ACCENT)
             if cursor is not None:
-                self.draw_next_piece(p, cursor, top, bottom, end_y, dash, bold)
+                self.draw_next_piece(p, cursor, top, bottom, start_y, end_y, dash, bold)
 
         if cursor is not None and area.contains(cursor):
             p.setPen(QPen(CROSSHAIR, line))
@@ -413,23 +441,31 @@ class StackOverlay(QWidget):
             x += step
         p.restore()
 
-    def draw_next_piece(self, p, cursor, top, bottom, end_y, dash, bold):
-        """Dashed box from the end line to the mouse, with the piece's full height."""
+    def draw_next_piece(self, p, cursor, top, bottom, start_y, end_y, dash, bold):
+        """Dashed box from the end line down to the mouse (or from the mouse down to
+        the start line), with the piece's full height. No edge where the piece
+        goes on off screen."""
         frame, s = self.stack.frame, self.scale()
         mouse_y = min(max(cursor.y(), top), bottom)
-        start_y = max(end_y, top)
-        if mouse_y <= start_y:
+        if mouse_y > max(end_y, top):  # below the captured part
+            piece = QRect(frame.left(), max(end_y, top), frame.width(), mouse_y - max(end_y, top))
+            open_top, open_bottom = end_y < top, False
+            size = mouse_y - end_y
+            badge_y = piece.bottom() + 1 + round(6 * s)
+        elif mouse_y < min(start_y, bottom):  # above it
+            piece = QRect(frame.left(), mouse_y, frame.width(), min(start_y, bottom) - mouse_y)
+            open_top, open_bottom = False, start_y > bottom
+            size = start_y - mouse_y
+            badge_y = piece.top() - round(mono_font(s).pixelSize() * 1.4 + 12 * s)
+        else:
             return
-        piece = QRect(frame.left(), start_y, frame.width(), mouse_y - start_y)
         p.setPen(dash)
-        if end_y >= top:
-            p.drawRect(piece)
-        else:  # the piece goes on above the screen: no top edge
-            p.drawLine(piece.topLeft(), piece.bottomLeft())
+        p.drawLine(piece.topLeft(), piece.bottomLeft())
+        p.drawLine(piece.topRight(), piece.bottomRight())
+        if not open_top:
+            p.drawLine(piece.topLeft(), piece.topRight())
+        if not open_bottom:
             p.drawLine(piece.bottomLeft(), piece.bottomRight())
-            p.drawLine(piece.topRight(), piece.bottomRight())
-        corner = QPoint(piece.right() + 1, piece.bottom() + 1)
-        if self.area.contains(corner - QPoint(1, 1)):
-            text = f"{frame.width()}×{mouse_y - end_y}"
-            draw_label(p, text, bold, corner.x() - label_width(text, bold, s), corner.y() + round(6 * s),
-                       QColor("black"), ACCENT, self.area, s)
+        text = f"{frame.width()}×{size}"
+        draw_label(p, text, bold, piece.right() + 1 - label_width(text, bold, s), badge_y,
+                   QColor("black"), ACCENT, self.area, s)
