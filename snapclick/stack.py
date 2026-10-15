@@ -348,16 +348,21 @@ class StackOverlay(QWidget):
         top, bottom = stack.content()
         end_y = stack.end_y()
         cursor = stack.cursor
-        if not long.lost:
-            shade = QRect(frame.left(), top, frame.width(), min(end_y, bottom) - top)
-            if shade.height() > 0:
-                self.draw_shade(p, shade, line)
+        shade = QRect(frame.left(), top, frame.width(), min(end_y, bottom) - top)
+        striped = not long.lost and shade.height() > 0
+        if striped:
+            self.draw_shade(p, shade, line)
 
+        # Guide lines: the full frame while stripes are on screen, else only its sides.
         dash = QPen(ACCENT, line, Qt.PenStyle.CustomDashLine)
         dash.setDashPattern([4, 3])
         p.setPen(dash)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRect(frame)
+        if striped:
+            p.drawRect(frame)
+        else:
+            p.drawLine(frame.topLeft(), frame.bottomLeft())
+            p.drawLine(frame.topRight(), frame.bottomRight())
 
         font, bold = mono_font(s), mono_font(s, semibold=True)
         tag_x, tag_y = frame.left() + round(6 * s), top + round(6 * s)
@@ -417,7 +422,12 @@ class StackOverlay(QWidget):
             return
         piece = QRect(frame.left(), start_y, frame.width(), mouse_y - start_y)
         p.setPen(dash)
-        p.drawRect(piece)
+        if end_y >= top:
+            p.drawRect(piece)
+        else:  # the piece goes on above the screen: no top edge
+            p.drawLine(piece.topLeft(), piece.bottomLeft())
+            p.drawLine(piece.bottomLeft(), piece.bottomRight())
+            p.drawLine(piece.topRight(), piece.bottomRight())
         corner = QPoint(piece.right() + 1, piece.bottom() + 1)
         if self.area.contains(corner - QPoint(1, 1)):
             text = f"{frame.width()}×{mouse_y - end_y}"
