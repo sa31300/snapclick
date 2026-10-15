@@ -22,6 +22,7 @@ MONO = "JetBrains Mono"
 FONT_SIZE = 12
 MAGNIFIER_SIZE = 120
 ZOOM = 4
+WDA_EXCLUDEFROMCAPTURE = 0x11
 
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
@@ -41,6 +42,7 @@ gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [wintypes.HDC]
 user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
 user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+user32.SetWindowDisplayAffinity.argtypes = [wintypes.HWND, wintypes.DWORD]
 
 
 def grab_desktop():
@@ -103,6 +105,72 @@ def physical_rect(screen):
     g = screen.geometry()
     ratio = screen.devicePixelRatio()
     return QRect(g.x(), g.y(), round(g.width() * ratio), round(g.height() * ratio))
+
+
+def exclude_from_capture(widget):
+    """Leave this window out of screen reads (Windows 10 2004+). Returns False if not possible."""
+    return bool(user32.SetWindowDisplayAffinity(int(widget.winId()), WDA_EXCLUDEFROMCAPTURE))
+
+
+def mono_font(scale, semibold=False):
+    font = QFont(MONO)
+    font.setPixelSize(round(FONT_SIZE * scale))
+    if semibold:
+        font.setWeight(QFont.Weight.DemiBold)
+    return font
+
+
+def draw_label(p, text, font, x, y, fg, bg, area, scale, border=None):
+    """Text in a box whose top-left is (x, y), kept inside `area` (one monitor)."""
+    metrics = QFontMetrics(font)
+    pad_x, pad_y = round(6 * scale), round(3 * scale)
+    box = QRect(0, 0, metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y)
+    box.moveTo(min(max(x, area.left()), area.right() + 1 - box.width()),
+               min(max(y, area.top()), area.bottom() + 1 - box.height()))
+    if bg:
+        p.fillRect(box, bg)
+    if border:
+        p.setPen(QPen(border, 1))
+        p.drawRect(box.adjusted(0, 0, -1, -1))
+    p.setFont(font)
+    p.setPen(fg)
+    p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+
+
+def label_width(text, font, scale):
+    """Width of the box draw_label makes."""
+    return QFontMetrics(font).horizontalAdvance(text) + round(12 * scale)
+
+
+def magnifier_reach(scale):
+    """Real pixels the magnifier shows on each side of the cursor."""
+    return round(MAGNIFIER_SIZE / ZOOM / 2 * scale)
+
+
+def draw_magnifier(p, image, origin, cursor, area, scale):
+    """Pixels around `cursor` zoomed 4x, from `image` whose top-left is `origin`."""
+    half = magnifier_reach(scale)
+    source = QRect(cursor.x() - half, cursor.y() - half, 2 * half + 1, 2 * half + 1)
+    box_size = source.width() * ZOOM
+    gap = round(24 * scale)
+    # Bottom-right of the cursor; flip to the other side near an edge.
+    x = cursor.x() + gap
+    if x + box_size > area.right():
+        x = cursor.x() - gap - box_size
+    y = cursor.y() + gap
+    if y + box_size > area.bottom():
+        y = cursor.y() - gap - box_size
+    box = QRect(x, y, box_size, box_size)
+
+    p.fillRect(box, HINT_BG)  # shows where the zoom goes past the desktop edge
+    pixels = image.copy(source.translated(-origin))
+    p.drawImage(box, pixels)  # no smoothing: each pixel becomes a sharp 4x4 square
+    middle = half * ZOOM + ZOOM // 2
+    p.setPen(QPen(ACCENT, 1))
+    p.drawLine(x + middle, y, x + middle, y + box_size - 1)
+    p.drawLine(x, y + middle, x + box_size - 1, y + middle)
+    p.setPen(QPen(HINT_BORDER, 1))
+    p.drawRect(box.adjusted(-1, -1, 0, 0))
 
 
 class Capture(QObject):
@@ -201,53 +269,10 @@ class Overlay(QWidget):
         return QPoint(self.area.x() + int(pos.x() * s), self.area.y() + int(pos.y() * s))
 
     def font(self, semibold=False):
-        font = QFont(MONO)
-        font.setPixelSize(round(FONT_SIZE * self.scale()))
-        if semibold:
-            font.setWeight(QFont.Weight.DemiBold)
-        return font
+        return mono_font(self.scale(), semibold)
 
     def label(self, p, text, font, x, y, fg, bg, border=None):
-        """Text in a box whose top-left is (x, y), kept inside this monitor."""
-        s = self.scale()
-        metrics = QFontMetrics(font)
-        pad_x, pad_y = round(6 * s), round(3 * s)
-        box = QRect(0, 0, metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y)
-        box.moveTo(min(max(x, self.area.left()), self.area.right() + 1 - box.width()),
-                   min(max(y, self.area.top()), self.area.bottom() + 1 - box.height()))
-        if bg:
-            p.fillRect(box, bg)
-        if border:
-            p.setPen(QPen(border, 1))
-            p.drawRect(box.adjusted(0, 0, -1, -1))
-        p.setFont(font)
-        p.setPen(fg)
-        p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
-
-    def draw_magnifier(self, p, cursor):
-        s = self.scale()
-        half = round(MAGNIFIER_SIZE / ZOOM / 2 * s)  # real pixels on each side of the cursor
-        source = QRect(cursor.x() - half, cursor.y() - half, 2 * half + 1, 2 * half + 1)
-        box_size = source.width() * ZOOM
-        gap = round(24 * s)
-        # Bottom-right of the cursor; flip to the other side near an edge.
-        x = cursor.x() + gap
-        if x + box_size > self.area.right():
-            x = cursor.x() - gap - box_size
-        y = cursor.y() + gap
-        if y + box_size > self.area.bottom():
-            y = cursor.y() - gap - box_size
-        box = QRect(x, y, box_size, box_size)
-
-        p.fillRect(box, HINT_BG)  # shows where the zoom goes past the desktop edge
-        pixels = self.capture.image.copy(source.translated(-self.capture.origin))
-        p.drawImage(box, pixels)  # no smoothing: each pixel becomes a sharp 4x4 square
-        middle = half * ZOOM + ZOOM // 2
-        p.setPen(QPen(ACCENT, 1))
-        p.drawLine(x + middle, y, x + middle, y + box_size - 1)
-        p.drawLine(x, y + middle, x + box_size - 1, y + middle)
-        p.setPen(QPen(HINT_BORDER, 1))
-        p.drawRect(box.adjusted(-1, -1, 0, 0))
+        draw_label(p, text, font, x, y, fg, bg, self.area, self.scale(), border)
 
     def paintEvent(self, event):
         # Draw on an image the size of the monitor in real pixels, so 1 px
@@ -300,7 +325,7 @@ class Overlay(QWidget):
             margin = round(16 * s)
             self.label(p, f"[click] {step} corner   [esc] cancel", self.font(),
                        area.left() + margin, area.top() + margin, HINT_TEXT, HINT_BG, HINT_BORDER)
-            self.draw_magnifier(p, cursor)
+            draw_magnifier(p, capture.image, capture.origin, cursor, area, s)
 
         p.end()
         QPainter(self).drawImage(QRectF(self.rect()), canvas)
