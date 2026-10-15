@@ -13,12 +13,12 @@ SCROLLBAR = 6  # px at the right edge
 TRACK, THUMB = b"\x2a\x2a\x2a\xff", b"\x80\x80\x80\xff"
 
 
-def make_document(lines=150, seed=1):
+def make_document(lines=150, seed=1, longest=WIDTH, shortest=8, empty=0.15):
     """Made-up terminal text: lines of random 'glyphs', some lines empty."""
     rng = random.Random(seed)
     rows = []
     for _ in range(lines):
-        length = 0 if rng.random() < 0.15 else rng.randint(8, WIDTH)
+        length = 0 if rng.random() < empty else rng.randint(shortest, longest)
         rows += [BG * WIDTH] * 3
         for _ in range(LINE - 6):
             rows.append(b"".join(INK if x < length and rng.random() < 0.3 else BG for x in range(WIDTH)))
@@ -34,11 +34,17 @@ def make_title(height=24):
 class Terminal:
     """A frame over the document, scrolled to `top`."""
 
-    def __init__(self, document, title=0, padding=0, scrollbar=False):
+    def __init__(self, document, title=0, padding=0, scrollbar=False, edge=0):
         self.document = document
         self.title = make_title(title) if title else []
         self.padding = padding
         self.scrollbar = scrollbar
+        self.edge = edge  # px at the left showing the window behind: never scrolls, sometimes changes
+        self.edge_rng = random.Random(5)
+        self.behind = self.make_behind()
+
+    def make_behind(self):
+        return [bytes(self.edge_rng.randrange(256) for _ in range(4 * self.edge)) for _ in range(500)]
 
     def view(self, top):
         top = max(0, min(top, len(self.document) - CONTENT))
@@ -49,16 +55,21 @@ class Terminal:
             thumb_end = thumb_start + CONTENT * area // len(self.document)
             rows = [row[:-SCROLLBAR * 4] + (THUMB if thumb_start <= y < thumb_end else TRACK) * SCROLLBAR
                     for y, row in enumerate(rows)]
-        return self.title + rows
+        rows = self.title + rows
+        if self.edge:
+            if self.edge_rng.random() < 0.1:  # the window behind changes now and then
+                self.behind[self.edge_rng.randrange(len(rows))] = bytes(4 * self.edge)
+            rows = [self.behind[y] + row[4 * self.edge:] for y, row in enumerate(rows)]
+        return rows
 
     def expected(self, last_top):
         """The perfect long image after scrolling down to `last_top`."""
         return self.title + self.document[:last_top + CONTENT]
 
 
-def strip(rows):
-    """Rows without the scrollbar columns."""
-    return [row[:-SCROLLBAR * 4] for row in rows]
+def strip(rows, edge=0):
+    """Rows without the scrollbar columns (and the left edge strip)."""
+    return [row[4 * edge:-SCROLLBAR * 4] for row in rows]
 
 
 class MatcherTest(unittest.TestCase):
@@ -70,8 +81,8 @@ class MatcherTest(unittest.TestCase):
 
     def assert_joined(self, long, terminal, last_top, slack=0):
         """Every line exactly once, in order. `slack` = rows that may be missing at the very end."""
-        expected = strip(terminal.expected(last_top))
-        got = strip(long.rows)
+        expected = strip(terminal.expected(last_top), terminal.edge)
+        got = strip(long.rows, terminal.edge)
         self.assertGreaterEqual(len(got), len(expected) - slack)
         self.assertLessEqual(len(got), len(expected))
         self.assertEqual(got, expected[:len(got)])
@@ -141,6 +152,32 @@ class MatcherTest(unittest.TestCase):
         tops = [0, 150] + list(range(300, 1500, 50))
         long = self.run_scroll(terminal, tops)
         self.assert_joined(long, terminal, tops[-1], slack=LINE)
+
+    def test_changing_strip_at_the_edge(self):
+        """Whole window selected: a strip of the window behind at the left, short lines."""
+        terminal = Terminal(make_document(longest=30), title=30, scrollbar=True, edge=7)
+        tops = list(range(0, 1500, 23))
+        long = self.run_scroll(terminal, tops)
+        self.assertGreaterEqual(long.left, 7)
+        self.assert_joined(long, terminal, tops[-1], slack=LINE)
+
+    def test_lines_that_differ_only_in_a_number(self):
+        """Like a log: lines repeat every 30 lines, only the number at the left differs.
+        A fast flick must give 'lost', never a wrong position."""
+        rng = random.Random(3)
+        pattern = make_document(lines=30, seed=7, shortest=140, empty=0)
+        document = []
+        for n in range(300):
+            number = [b"".join(INK if rng.random() < 0.4 else BG for _ in range(16)) for _ in range(LINE)]
+            document += [num + row[16 * 4:] for num, row in zip(number, pattern[(n % 30) * LINE:(n % 30 + 1) * LINE])]
+        terminal = Terminal(document)
+        long = LongImage(terminal.view(0))
+        top = 0
+        for step in [40] * 10 + [190] * 8 + [40] * 20:  # normal, then a flick, then normal
+            top += step
+            long.add_read(terminal.view(top))
+            if not long.lost:
+                self.assertEqual(long.rows[long.pos], document[top], f"wrong position at top={top}")
 
     def test_scroll_back_up(self):
         terminal = Terminal(make_document())
