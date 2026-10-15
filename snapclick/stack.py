@@ -350,7 +350,8 @@ class StackOverlay(QWidget):
     # --- drawing -----------------------------------------------------------
 
     def paintEvent(self, event):
-        # Draw in real pixels (see capture.Overlay). See-through inside the frame.
+        # Draw in real pixels (see capture.Overlay). See-through in the frame's
+        # columns, top to bottom of the monitor that shows the frame.
         s = self.scale()
         line = max(1, int(s))
         stack, long, frame, area = self.stack, self.stack.long, self.stack.frame, self.area
@@ -359,8 +360,9 @@ class StackOverlay(QWidget):
         p = QPainter(canvas)
         p.translate(-area.topLeft())
         p.fillRect(area, DIM)
+        strip = QRect(frame.left(), area.top(), frame.width(), area.height()) if area.intersects(frame) else frame
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-        p.fillRect(frame, SEE_THROUGH)
+        p.fillRect(strip, SEE_THROUGH)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         top, bottom = stack.content()
@@ -372,16 +374,16 @@ class StackOverlay(QWidget):
         if striped:
             self.draw_shade(p, shade, line)
 
-        # Guide lines: the full frame while stripes are on screen, else only its sides.
+        # Guide lines: the strip's sides; the frame's top and bottom only while stripes are on screen.
         dash = QPen(ACCENT, line, Qt.PenStyle.CustomDashLine)
         dash.setDashPattern([4, 3])
         p.setPen(dash)
         p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(strip.topLeft(), strip.bottomLeft())
+        p.drawLine(strip.topRight(), strip.bottomRight())
         if striped:
-            p.drawRect(frame)
-        else:
-            p.drawLine(frame.topLeft(), frame.bottomLeft())
-            p.drawLine(frame.topRight(), frame.bottomRight())
+            p.drawLine(frame.topLeft(), frame.topRight())
+            p.drawLine(frame.bottomLeft(), frame.bottomRight())
 
         font, bold = mono_font(s), mono_font(s, semibold=True)
         tag_x, tag_y = frame.left() + round(6 * s), top + round(6 * s)
