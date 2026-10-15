@@ -10,7 +10,7 @@
 
 The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
 
-Some antivirus tools may flag Snapclick because it reads the keyboard, clipboard and screen. The source code is open for review.
+Some antivirus tools may flag Snapclick because it listens for the PrtSc key, and reads the clipboard and screen. The source code is open for review.
 
 ## How to use
 
