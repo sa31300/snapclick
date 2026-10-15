@@ -4,12 +4,13 @@ import winreg
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from snapclick import settings
 from snapclick.capture import Capture, clipboard_version, restore_clipboard
 from snapclick.preview import Preview
+from snapclick.stack import Stack
 from snapclick.settings_window import SettingsWindow
 
 DARK_TASKBAR_COLOR = "#FFB000"
@@ -73,6 +74,7 @@ class Tray(QSystemTrayIcon):
         self.capture = None  # the running capture, if any
         self.settings_window = None
         self.preview = None
+        self.stack = None  # the running stack (long capture), if any
         self.undo = None  # what the preview's Retake needs to undo the last capture
         self.hotkey = None  # GlobalHotkey, set by main
         self.light = taskbar_is_light()
@@ -123,6 +125,8 @@ class Tray(QSystemTrayIcon):
     def start_capture(self, frozen=None):
         if self.capture:  # already capturing: ignore a second PrtSc
             return
+        if self.stack:
+            self.stack.finish()  # keep the stack so far
         self.close_preview()  # its Retake must not undo a newer capture
         self.capture = Capture(frozen)
         self.capture.captured.connect(self._captured)
@@ -141,11 +145,14 @@ class Tray(QSystemTrayIcon):
                 "clipboard": c.previous_clipboard,
                 "clipboard_version": c.clipboard_version,
                 "saved_path": saved_path,
+                "frame": c.selection(),  # where piece 1 is on screen, for a stack
             }
             self.preview = Preview(image, can_save=not prefs["auto_save"],
                                    save_folder=prefs["save_folder"], saved_path=saved_path)
             self.preview.retake.connect(self.undo_and_retake)
             self.preview.save_requested.connect(self.save_from_preview)
+            self.preview.add_below.connect(self.start_stack)
+            self.preview.finish.connect(self.finish_stack)
             self.preview.closed.connect(self._preview_closed)
 
     def save_from_preview(self):
@@ -164,7 +171,54 @@ class Tray(QSystemTrayIcon):
             self.preview.close()
             self.preview = None
 
+    def start_stack(self):
+        undo = self.undo
+        if undo["saved_path"]:  # auto-save keeps only the final joined image
+            self.delete_file(undo["saved_path"])
+            undo["saved_path"] = None
+        self.preview.start_stack()
+        self.stack = Stack(undo["frame"], self.preview.image, [self.preview])
+        self.stack.changed.connect(self._stack_changed)
+        self.stack.finished.connect(self._stack_finished)
+        self.preview.raise_()  # above the stack overlay
+
+    def _stack_changed(self):
+        """A piece was added: the clipboard always holds the whole stack."""
+        image = self.stack.image()
+        self.copy(image)
+        self.preview.set_stack(image, self.stack.count())
+
+    def finish_stack(self):
+        if self.stack:
+            self.stack.finish()
+
+    def _stack_finished(self):
+        stack, self.stack = self.stack, None
+        image = stack.image()
+        self.copy(image, only_if_ours=True)
+        prefs = settings.load()
+        saved_path = self.save_image(image, prefs) if prefs["auto_save"] else None
+        self.undo["saved_path"] = saved_path
+        self.preview.finish_stack(image, stack.count(), saved_path)
+
+    def copy(self, image, only_if_ours=False):
+        """Put a stack image on the clipboard. `only_if_ours`: not if something
+        else was copied since our last copy."""
+        if only_if_ours and clipboard_version() != self.undo["clipboard_version"]:
+            return
+        QGuiApplication.clipboard().setImage(image)
+        self.undo["clipboard_version"] = clipboard_version()
+
     def undo_and_retake(self):
+        if self.stack and self.stack.count() > 1:  # while stacking: remove only the last piece
+            self.stack.remove_last()
+            image = self.stack.image()
+            self.copy(image, only_if_ours=True)
+            self.preview.set_stack(image, self.stack.count())
+            return
+        if self.stack:
+            self.stack.close()
+            self.stack = None
         undo = self.undo
         self.close_preview()
         if undo is None:
@@ -173,11 +227,14 @@ class Tray(QSystemTrayIcon):
         if clipboard_version() == undo["clipboard_version"]:
             restore_clipboard(undo["clipboard"])
         if undo["saved_path"]:
-            try:
-                undo["saved_path"].unlink()
-            except OSError:
-                pass  # already gone or locked: nothing more to do
+            self.delete_file(undo["saved_path"])
         self.start_capture(frozen=undo["frozen"])
+
+    def delete_file(self, path):
+        try:
+            path.unlink()
+        except OSError:
+            pass  # already gone or locked: nothing more to do
 
     def save_image(self, image, prefs):
         """Save to the save folder. Returns the file path, or None if it failed."""
