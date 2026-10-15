@@ -13,6 +13,7 @@
 - Windows only. Python 3.12. Use a virtual environment in `.venv`.
 - Keep the code simple and readable. Few files, clear names, short comments.
 - Do not change my VS Code settings.
+- Never write personal info into the repo: no real names, emails, user names, local paths like `C:\Users\...`, employer or job. Demo GIFs and screenshots use fake demo content only.
 - Commit small steps with clear messages (e.g. `Add tray icon`).
 - After each step, tell me in 1–2 lines what changed and how to test it.
 
