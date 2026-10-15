@@ -10,7 +10,7 @@
 
 The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
 
-Some antivirus tools may flag Snapclick because it listens for the PrtSc key, and reads the clipboard and screen. The source code is open for review.
+Some antivirus tools may flag Snapclick because it listens for the PrtSc key, reads the clipboard and screen, and (for long captures) passes the mouse wheel on to the window under it. The source code is open for review.
 
 ## How to use
 
@@ -19,11 +19,26 @@ Some antivirus tools may flag Snapclick because it listens for the PrtSc key, an
 3. Click one corner, then the opposite corner. Paste anywhere with **Ctrl+V**.
 
 **Esc** or **right-click** cancels. A magnifier next to the cursor helps you hit the exact pixel.
-With the preview on, the thumbnail has two buttons:
-- **Retake** (back arrow): undoes the capture (clipboard and saved file) and lets you select again on the same frozen screen.
+With the preview on, the thumbnail has these buttons:
+- **Add below** (square with a plus): starts a long capture, see below.
 - **Save** (arrow into tray, only when auto-save is off): saves this one capture to your save folder.
+- **Retake** (back arrow): undoes the capture (clipboard and saved file) and lets you select again on the same frozen screen.
 
 When a capture is saved, click the **file name** under the thumbnail to open it in File Explorer.
+
+### Long captures (stack)
+
+For things taller than the screen, like long terminal output. Snapclick joins several pieces into **one tall image**.
+
+![Snapclick stack: Add below, scroll, click, finish](docs/stack.gif)
+
+1. Take a normal capture of the first part (the preview must be on).
+2. Click **Add below** on the preview. The screen stays live.
+3. Scroll with the mouse wheel, then **click** where the next piece should end. Lines that scrolled past are included too.
+4. Repeat, then finish with **✓** on the preview, **Esc** or **right-click**.
+
+After every piece, the clipboard holds the whole joined image. **Retake** removes the last piece. With auto-save on, only the final image is saved.
+If you scroll too fast (or drag the scrollbar), Snapclick shows *jumped too far*: scroll back to the striped part and go on.
 
 > If PrtSc opens the Windows Snipping Tool instead, turn it off in
 > *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
@@ -35,7 +50,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 
 | Setting | Default |
 |---|---|
-| Auto-save each capture | Off |
+| Auto-save each capture | Off (in a long capture, only the final joined image is saved) |
 | Save folder | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) |
@@ -57,6 +72,14 @@ Key decisions and why:
 - **Fonts bundled** (JetBrains Mono, IBM Plex Sans, both OFL) — the design looks the same even if they aren't installed.
 - **One `.exe` with PyInstaller** — download and run, nothing to install.
 
+For the long captures (stack) the spec said: **spike first**. A small test tool checked the two risky parts on real terminals before anything else was built. Then:
+
+- **The screen stays live; Snapclick reads the frame ~20 times a second** and keeps a hidden long image of everything that scrolled through it. That is why lines that already left the screen still end up in the picture.
+- **Matching by column blocks, then whole rows** — 8 blocks per pixel row find the scroll position even with a scrollbar in the frame; requiring whole rows to match stops look-alike lines (logs that differ only in a number) from matching at the wrong place.
+- **Ignore what does not scroll** — title bar, padding and a strip of the window behind are found on the first scroll and left out.
+- **No keyboard or mouse hooks** — the wheel is passed on with a normal window message, and Esc while stacking is a hotkey, like PrtSc.
+- **Tested end to end** — scripts drove real terminals (classic console and Windows Terminal) with real wheel input, then checked the joined image line by line: every line exactly once.
+
 ### Build from source
 
 Use Python 3.12 from [python.org](https://www.python.org/) (Anaconda's Python is too old for Qt 6.12).
@@ -65,8 +88,9 @@ Use Python 3.12 from [python.org](https://www.python.org/) (Anaconda's Python is
 py -3.12 -m venv .venv
 .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
 .venv\Scripts\python -m snapclick       # run
+.venv\Scripts\python -m unittest discover tests   # tests
 .venv\Scripts\python build.py           # make dist\Snapclick.exe
-.venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif
+.venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif and docs/stack.gif
 ```
 
 ## License
