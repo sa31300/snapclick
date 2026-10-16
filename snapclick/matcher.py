@@ -5,8 +5,11 @@ LongImage keeps everything seen in the frame, top to bottom, with no repeats,
 and knows which long-image row each frame row shows right now. It grows at
 the bottom (scrolling down) and at the top (scrolling up, above piece 1).
 
-Long image layout: [header: piece 1's static top rows, like a title bar]
-[lines recorded above piece 1] [piece 1's lines] [lines recorded below].
+The reads are the whole *view* (piece 1's columns, the full height of the
+window's text), so the long image holds more than piece 1 from the start.
+
+Long image layout: [header: the view's static top rows, like a title bar]
+[lines recorded above] [lines seen at the start, piece 1 among them] [lines recorded below].
 """
 from PySide6.QtGui import QImage
 
@@ -16,6 +19,7 @@ MIN_ROWS = 0.6  # and share of rows that must be fully equal (but the rightmost 
 MIN_BLOCKS = 8  # fewer compared blocks than this is too little to trust
 COMMON = 32  # a block found in more places than this says nothing about position
 CANDIDATES = 5  # best-voted positions that get a full check
+CACHE = 20000  # row hashes kept; most rows of a read were in the last read, just moved
 MOVED_ROWS = 0.15  # share of rows that must change to count as a real movement
 MIN_WIDTH = 16  # px: never shrink the matched columns below this
 STATIC_SHARE = 0.9  # share of marked pixels that must stay put for a static column
@@ -109,16 +113,18 @@ def static_columns(rows, last):
 class LongImage:
     """Everything seen in the frame so far. Frame row r shows long row `pos + r`."""
 
-    def __init__(self, first):
-        """`first` = the frame's pixel rows at the start (piece 1)."""
+    def __init__(self, first, piece1=None):
+        """`first` = the view's pixel rows at the start; `piece1` = (top, bottom)
+        rows of piece 1 inside it (default: all of it)."""
         self.rows = list(first)
         self.height = len(first)  # frame height in rows
         self.left, self.right = 0, len(first[0]) // 4  # pixel columns used for matching
         self.top = 0  # static rows at the top of the frame (title bar, padding)
         self.bottom = 0  # static rows at the bottom; cut off the end of piece 1
         self.static_known = False  # set on the first real movement
-        self.piece1_end = self.height  # long row where piece 1 ends
-        self.header = 0  # piece 1's rows before its first line of text; lines above go after them
+        # Long rows of piece 1; they move down when lines are added above.
+        self.piece1_top, self.piece1_end = piece1 or (0, self.height)
+        self.header = 0  # the view's rows before its first line of text; lines above go after them
         self.above = 0  # lines recorded above piece 1 so far
         self.pos = 0
         self.lost = False
@@ -126,9 +132,15 @@ class LongImage:
         self._hash_all()
 
     def _sig(self, row):
-        return row_blocks(row[4 * self.left:4 * self.right])
+        sig = self.cache.get(row)
+        if sig is None:
+            if len(self.cache) > CACHE:
+                self.cache.clear()
+            sig = self.cache[row] = row_blocks(row[4 * self.left:4 * self.right])
+        return sig
 
     def _hash_all(self):
+        self.cache = {}  # row pixels -> its block hashes (for the current columns)
         self.sigs = [self._sig(row) for row in self.rows]
         self.last = [self._sig(row) for row in self.last_rows]
         self._index_all()
@@ -200,6 +212,8 @@ class LongImage:
             self.rows[self.header:self.header] = [rows[r] for r in new]
             self.sigs[self.header:self.header] = [sigs[r] for r in new]
             self.pos = best = best + len(new)
+            if self.piece1_top >= self.header:
+                self.piece1_top += len(new)
             self.piece1_end += len(new)
             self.above += len(new)
             self._index_all()
@@ -248,6 +262,14 @@ class LongImage:
             q = p + r
             if long_start <= q < long_end:
                 a, b = sigs[r], self.sigs[q]
+                if a == b:  # quick path: equal rows (the usual case at the right place)
+                    blocks = len(a) - a.count(None)
+                    equal += blocks
+                    compared += blocks
+                    if blocks - (a[-1] is not None):  # the row has text (besides a scrollbar)
+                        rows_compared += 1
+                        rows_equal += 1
+                    continue
                 e, c = compare(a, b)
                 equal += e
                 compared += c
@@ -265,11 +287,12 @@ class LongImage:
             return
         self.static_known = True
         self.top, self.bottom = top, bottom
-        self.piece1_end = self.height - bottom
-        # Lines from above go right before piece 1's first non-blank row: blank rows
+        self.piece1_end = min(self.piece1_end, self.height - bottom)
+        self.piece1_top = min(self.piece1_top, self.piece1_end - 1)
+        # Lines from above go right before the view's first non-blank row: blank rows
         # under a title bar may be padding that never scrolls.
         self.header = top
-        while self.header < self.piece1_end - 1 and all(b is None for b in self.sigs[self.header]):
+        while self.header < self.height - bottom - 1 and all(b is None for b in self.sigs[self.header]):
             self.header += 1
         if bottom:
             del self.rows[self.height - bottom:]

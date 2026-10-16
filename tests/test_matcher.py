@@ -250,6 +250,36 @@ class MatcherTest(unittest.TestCase):
         long = self.run_scroll(terminal, tops)
         self.assert_above(long, terminal, 600, 310, 700)
 
+    def check_piece1_follows(self, terminal, first, piece1, tops):
+        """The view is the whole window; piece 1 = view rows `piece1` at `first`.
+        After every read, the long image still knows piece 1's rows, and the
+        screen row where piece 1 starts is right, also past its old top and bottom."""
+        title = len(terminal.title)
+        doc_top = first + piece1[0] - title  # document row where piece 1 starts
+        height = piece1[1] - piece1[0]
+        long = LongImage(terminal.view(first), piece1)
+        for top in tops:
+            self.assertTrue(long.add_read(terminal.view(top)), f"lost at top={top}")
+            got = strip(long.rows[long.piece1_top:long.piece1_end], terminal.edge)
+            self.assertEqual(got, strip(terminal.document[doc_top:doc_top + height], terminal.edge))
+            row = long.piece1_top - long.pos  # view row that shows piece 1's first line
+            if title <= row < len(terminal.title) + CONTENT:
+                self.assertEqual(strip([terminal.view(top)[row]], terminal.edge),
+                                 strip([terminal.document[doc_top]], terminal.edge), f"top={top}")
+        return long
+
+    def test_piece1_in_the_middle_scroll_down_and_up(self):
+        terminal = Terminal(make_document())
+        tops = list(range(600, 900, 3 * LINE)) + list(range(900, 400, -3 * LINE)) + list(range(400, 700, 3 * LINE))
+        self.check_piece1_follows(terminal, 600, (80, 120), tops)
+
+    def test_piece1_in_the_middle_with_title_bar(self):
+        terminal = Terminal(make_document(), title=30, scrollbar=True)
+        tops = list(range(600, 1000, 41)) + list(range(1000, 300, -37))
+        long = self.check_piece1_follows(terminal, 600, (110, 150), tops)
+        self.assertGreaterEqual(long.header, 30)
+        self.assertGreaterEqual(long.piece1_top, long.header)  # the title bar is not part of piece 1
+
     def test_image_round_trip(self):
         rows = make_document(lines=4)
         self.assertEqual(image_rows(rows_image(rows, WIDTH)), rows)

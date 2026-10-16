@@ -1,7 +1,8 @@
 """Stack: long captures made of several pieces (docs/SPEC.md §2b).
 
-The screen is live. Snapclick reads the frame many times a second and keeps a
-long image of everything that scrolled through it (see matcher.py). A click
+The screen is live. Snapclick reads the *view* (piece 1's columns, the full
+height of the window's text) many times a second and keeps a long image of
+everything that scrolled through it (see matcher.py). A click
 below the captured part adds the part from its end down to the click; a click
 above it adds the part from the click down to its start.
 
@@ -45,6 +46,8 @@ user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetWindow.restype = wintypes.HWND
 user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
 user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
@@ -105,6 +108,15 @@ def pass_wheel(overlay_hwnd, delta):
         user32.PostMessageW(target, WM_MOUSEWHEEL, wparam, lparam)
 
 
+def client_rows(hwnd):
+    """(top, bottom) screen rows of a window's inside (no title bar or border)."""
+    rect = wintypes.RECT()
+    user32.GetClientRect(hwnd, ctypes.byref(rect))
+    corner = wintypes.POINT(0, 0)
+    user32.ClientToScreen(hwnd, ctypes.byref(corner))
+    return corner.y, corner.y + rect.bottom - 1
+
+
 class EscapeKey(QAbstractNativeEventFilter):
     """Esc ends the stack while another app has the keyboard (see Stack)."""
 
@@ -142,12 +154,11 @@ class Stack(QObject):
         """`frame` = piece 1's rectangle (real pixels), `first` = piece 1's image."""
         super().__init__()
         self.frame = frame
-        self.long = LongImage(image_rows(first))
         # Pieces 2, 3...: ("below", end row) or ("above", start row). Rows are
         # counted from long.above, so they stay right when lines are added above.
         self.pieces = []
         self.cursor = None
-        self.live = None  # (image, origin): the last screen read, frame and mouse area
+        self.live = None  # (image, origin): the last screen read, view and mouse area
         self.other_windows = list(other_windows)  # e.g. the preview
         self.overlays = [StackOverlay(self, screen) for screen in QGuiApplication.screens()]
         for overlay in self.overlays:
@@ -158,12 +169,25 @@ class Stack(QObject):
         # bars and borders. The overlay never takes the keyboard, so Esc is a hotkey.
         center = wintypes.POINT(frame.center().x(), frame.center().y())
         target = window_below(int(self.overlays[0].winId()), center)
+        self.view = QRect(frame)  # piece 1's columns, the window's full height
         if target:
-            user32.SetForegroundWindow(user32.GetAncestor(target, GA_ROOT))
+            window = user32.GetAncestor(target, GA_ROOT)
+            user32.SetForegroundWindow(window)
+            top, bottom = client_rows(window)
+            monitor = next((o.area for o in self.overlays if o.area.contains(frame.center())), frame)
+            top = max(min(top, frame.top()), monitor.top())
+            bottom = min(max(bottom, frame.bottom()), monitor.bottom())
+            self.view = QRect(frame.left(), top, frame.width(), bottom - top + 1)
         self.escape = EscapeKey(self.finish)
         mouse_screen = QGuiApplication.screenAt(QCursor.pos())
         under_mouse = next((o for o in self.overlays if o.screen() == mouse_screen), self.overlays[0])
         self.cursor = under_mouse.to_physical(under_mouse.mapFromGlobal(QCursor.pos()))
+
+        # The long image starts with one read of the view, piece 1 as it was captured.
+        rows = image_rows(self.grab_live(self.view))
+        piece1 = frame.top() - self.view.top()
+        rows[piece1:piece1 + frame.height()] = image_rows(first)
+        self.long = LongImage(rows, (piece1, piece1 + frame.height()))
 
         self.lock = threading.Lock()  # guards self.long and self.live
         self.shown = None  # the matcher state the overlay shows
@@ -183,8 +207,9 @@ class Stack(QObject):
 
     def start(self):
         """Long-image row where the captured part starts (after the header)."""
+        long = self.long
         starts = [row for side, row in self.pieces if side == "above"]
-        return min(starts, default=self.long.header) + self.long.above
+        return min(starts) + long.above if starts else max(long.piece1_top, long.header)
 
     def end(self):
         """Long-image row where the captured part ends."""
@@ -192,10 +217,12 @@ class Stack(QObject):
         return max(ends) + self.long.above if ends else self.long.piece1_end
 
     def image(self):
-        """All pieces joined into one image: header (title bar), then the captured part."""
+        """All pieces joined into one image: piece 1's part of the header (a title
+        bar, if piece 1 has it), then the captured part."""
         with self.lock:
-            rows = self.long.rows
-            return rows_image(rows[:self.long.header] + rows[self.start():self.end()], self.frame.width())
+            rows, long = self.long.rows, self.long
+            return rows_image(rows[long.piece1_top:long.header] + rows[self.start():self.end()],
+                              self.frame.width())
 
     def grab_live(self, rect):
         if self.excluded:
@@ -219,52 +246,58 @@ class Stack(QObject):
             time.sleep(max(0.0, READ_MS / 1000 - (time.perf_counter() - start)))
 
     def read(self):
-        """Read the frame, and the area around the mouse for the magnifier, in one go:
+        """Read the view, and the area around the mouse for the magnifier, in one go:
         each screen read waits for the next screen refresh."""
-        area = QRect(self.frame)
+        area = QRect(self.view)
         cursor = self.cursor
         if cursor is not None:
             area = area.united(QRect(cursor.x() - LIVE_MARGIN, cursor.y() - LIVE_MARGIN,
                                      2 * LIVE_MARGIN + 1, 2 * LIVE_MARGIN + 1))
         image = self.grab_live(area)
-        rows = image_rows(image.copy(self.frame.translated(-area.topLeft())))
+        rows = image_rows(image.copy(self.view.translated(-area.topLeft())))
         with self.lock:
             self.long.add_read(rows)
             self.live = (image, area.topLeft())
 
     def show_read(self):
-        """Repaint the frame if the text moved (or got lost or found)."""
+        """Repaint the view if the text moved (or got lost or found)."""
         long = self.long
         state = (long.pos, long.lost, long.top, long.bottom)
         if state != self.shown:
             self.shown = state
-            self.update(self.frame)
+            self.update(self.view)
 
     def content(self):
-        """Top and bottom (exclusive) screen rows of the frame that show moving text."""
-        top = self.frame.top() + self.long.top
-        return top, self.frame.top() + self.long.height - self.long.bottom
+        """Top and bottom (exclusive) screen rows of the view that show moving text."""
+        top = self.view.top() + self.long.top
+        return top, self.view.top() + self.long.height - self.long.bottom
+
+    def click_rows(self):
+        """Top and bottom (exclusive) screen rows where a click ends a piece:
+        still piece 1's rows (v1.4 part B opens this to the whole view)."""
+        top, bottom = self.content()
+        return max(top, self.frame.top()), min(bottom, self.frame.bottom() + 1)
 
     def start_y(self):
-        """Screen row of the start line (may be off the frame)."""
-        return self.frame.top() + self.start() - self.long.pos
+        """Screen row of the start line (may be off the view)."""
+        return self.view.top() + self.start() - self.long.pos
 
     def end_y(self):
-        """Screen row of the end line (may be off the frame)."""
-        return self.frame.top() + self.end() - self.long.pos
+        """Screen row of the end line (may be off the view)."""
+        return self.view.top() + self.end() - self.long.pos
 
     def move(self, point):
         old, self.cursor = self.cursor, point
-        self.update(self.frame, QRect(point, point), QRect(old, old) if old else None)
+        self.update(self.view, QRect(point, point), QRect(old, old) if old else None)
 
     def click(self, point):
         with self.lock:  # uses the last read, which is what the overlay shows
             if self.long.lost:
                 return
             long = self.long
-            top, bottom = self.content()
-            y = min(max(point.y(), top), bottom)  # outside the frame = its nearest edge
-            row = min(max(long.pos + y - self.frame.top(), long.header), len(long.rows))
+            top, bottom = self.click_rows()
+            y = min(max(point.y(), top), bottom)  # outside = the nearest edge
+            row = min(max(long.pos + y - self.view.top(), long.header), len(long.rows))
             if row > self.end():
                 self.pieces.append(("below", row - long.above))
             elif row < self.start():
@@ -408,7 +441,7 @@ class StackOverlay(QWidget):
                 draw_label(p, f"↓ + {start_y - bottom} px below, recorded while scrolling", font, tag_x,
                            bottom - height - round(6 * s), ACCENT, HINT_BG, area, s, ACCENT)
             if cursor is not None:
-                self.draw_next_piece(p, cursor, top, bottom, start_y, end_y, dash, bold)
+                self.draw_next_piece(p, cursor, *stack.click_rows(), start_y, end_y, dash, bold)
 
         if cursor is not None and area.contains(cursor):
             p.setPen(QPen(CROSSHAIR, line))
