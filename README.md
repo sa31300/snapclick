@@ -58,6 +58,11 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 | Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Add below, Save and Retake buttons). Needed for long captures. |
 | Start with Windows | Off |
 
+## Known issues
+
+- **Scrolling up fast can shift the stripes** in a long capture. In some windows (for example Claude Code), a fast swipe up can put the striped part a few lines off the captured text. Scroll a little down and back up: the stripes go back on the right lines.
+- **Rare: lost lines after a half-drawn first scroll.** In apps that redraw their whole screen line by line, if the very first scroll of a long capture catches the screen half drawn, a few lines can be left out of the image. Check long captures from such apps before you share them.
+
 ## How I built this
 
 I built Snapclick by **directing Claude Code** from a written spec: [`docs/SPEC.md`](docs/SPEC.md). I wrote what the app must do and how it must look; the AI wrote the code in small, tested steps (see the commit history). When I wanted a new feature (the magnifier), it went into the spec first.

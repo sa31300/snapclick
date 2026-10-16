@@ -152,6 +152,11 @@ A code review against the reference animation found **no missing behavior**: str
 
 **Not done:** the owner has **not tested or accepted** the stack yet. Steps 3–5 were done without stopping for the owner's OK. Treat the stack as **unaccepted**.
 
+### Still open (known issues, 2026-10-16)
+
+- **Scrolling up fast can shift the stripes.** In some windows (seen in Claude Code), a fast swipe up can put the stripes a few lines off the captured text. A small scroll down and back up puts them back on the right lines.
+- **Rare: lost lines after a half-drawn first scroll.** In apps that redraw their whole screen line by line, if the very first scroll of a stack is read while the screen is half drawn, some text lines can be taken for a fixed bar and left out of the image.
+
 ### Next steps (for the AI) — one at a time, stop after each
 
 1. ~~Test-only settings (§6)~~ — done. ~~No top/bottom guide lines~~ — done (`Stack: no top or bottom guide lines, as in the reference GIF`).
