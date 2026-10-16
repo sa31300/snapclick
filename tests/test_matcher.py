@@ -179,6 +179,44 @@ class MatcherTest(unittest.TestCase):
             if not long.lost:
                 self.assertEqual(long.rows[long.pos], document[top], f"wrong position at top={top}")
 
+    def test_same_lines_but_the_number_are_not_static(self):
+        """Like `line 13  some test text`: every line is the same but the number,
+        so after a scroll most blocks of each row are where they were. That must
+        not make the text look static (it got lost, or the stripes slid)."""
+        rng = random.Random(4)
+        text = make_document(lines=1, seed=8, shortest=80, longest=80, empty=0)
+        document = []
+        for n in range(200):
+            number = [b"".join(INK if 3 <= y < LINE - 3 and rng.random() < 0.4 else BG for _ in range(16))
+                      for y in range(LINE)]  # ink only where the text has ink, like digits
+            document += [row[:4] + num + row[17 * 4:] for num, row in zip(number, text)]
+        for title in (0, 30):
+            terminal = Terminal(document, title=title)
+            long = LongImage(terminal.view(400))
+            for top in [448, 496, 544, 448, 352, 304, 400, 448, 544]:  # wheel notches of 3 lines
+                self.assertTrue(long.add_read(terminal.view(top)), f"lost at top={top}")
+                self.assertEqual(long.top, title)
+                self.assertEqual(long.rows[long.pos + title], document[top], f"wrong position at top={top}")
+
+    def test_part_not_redrawn_yet(self):
+        """The console moves the old pixels first, then draws the lines that scrolled
+        into view: a read in between shows old lines there. They must not be added
+        (they were: lines 111-113 twice, no 114-116)."""
+        terminal = Terminal(make_document(), title=30)
+        late = LINE  # rows not redrawn yet (the real console: 3 lines of 26)
+        long = self.run_scroll(terminal, [400, 448])  # the first move finds the title bar
+        last_top = 448
+        for top in [496, 544, 592, 640, 592, 544, 496, 448, 400, 352, 304, 256, 304, 352]:
+            before, now = terminal.view(last_top), terminal.view(top)
+            if top > last_top:  # scrolled down: old pixels at the bottom
+                torn = now[:-late] + before[-late:]
+            else:  # up: old pixels at the top, under the title bar
+                torn = now[:30] + before[30:30 + late] + now[30 + late:]
+            self.assertTrue(long.add_read(torn), f"lost at top={top} (not redrawn)")
+            self.assertTrue(long.add_read(now), f"lost at top={top}")
+            last_top = top
+        self.assert_above(long, terminal, 400, 256, 640)
+
     def test_scroll_back_up(self):
         terminal = Terminal(make_document())
         tops = list(range(0, 600, 7)) + list(range(600, 100, -9)) + list(range(100, 1200, 11))

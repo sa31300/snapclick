@@ -64,14 +64,13 @@ def kept_place(a, b):
     return equal >= STATIC_ROW * compared
 
 
-def edge_runs(sigs, last):
-    """How many rows at the top and at the bottom kept their place between two reads."""
-    height = len(sigs)
+def edge_runs(height, static):
+    """How many rows at the top and at the bottom are static: `static(r)` is true."""
     top = 0
-    while top < height and kept_place(sigs[top], last[top]):
+    while top < height and static(top):
         top += 1
     bottom = 0
-    while bottom < height - top and kept_place(sigs[height - 1 - bottom], last[height - 1 - bottom]):
+    while bottom < height - top and static(height - 1 - bottom):
         bottom += 1
     return top, bottom
 
@@ -129,6 +128,7 @@ class LongImage:
         self.pos = 0
         self.lost = False
         self.last_rows = first  # the last read that was found
+        self.fresh = []  # long rows added from the last read: (start, end) ranges
         self._hash_all()
 
     def _sig(self, row):
@@ -160,27 +160,96 @@ class LongImage:
         sigs = [self._sig(row) for row in rows]
         if sigs == self.last:  # nothing moved
             self.lost = False
+            self._add_new(rows, sigs)
             return True
 
         if self.static_known:
             top, bottom = self._static_now(sigs)
         else:
             # Rows that kept their place since the last read may be static.
-            top, bottom = edge_runs(sigs, self.last)
+            kept = lambda r: kept_place(sigs[r], self.last[r])
+            top, bottom = edge_runs(self.height, kept)
+            if self.height - top - bottom < MOVED_ROWS * self.height:
+                # Lines like `line 13  some test text` keep all blocks but the
+                # number in place after a scroll: look at exact rows too.
+                kept = lambda r: same_place(sigs[r], self.last[r])
+                top, bottom = edge_runs(self.height, kept)
             if self.height - top - bottom >= MOVED_ROWS * self.height:
-                # Looks like the first real movement: leave out static edge columns.
-                moved = [r for r in range(top, self.height - bottom) if not kept_place(sigs[r], self.last[r])]
+                # Looks like the first real movement. Edge columns that did not
+                # change (a strip of the window behind) spoil the match: leave them
+                # out. But only if they do: with look-alike lines, the columns of
+                # `line` and `some test text` don't change either, and they are text.
+                moved = [r for r in range(top, self.height - bottom) if not kept(r)]
                 left, right = static_columns([rows[r] for r in moved], [self.last_rows[r] for r in moved])
-                if right - left >= MIN_WIDTH and (left, right) != (self.left, self.right):
+                if right - left >= MIN_WIDTH and (left, right) != (self.left, self.right) \
+                        and self._match(sigs, top, bottom) in (None, self.pos):
                     self.left, self.right = left, right
                     self._hash_all()
                     sigs = [self._sig(row) for row in rows]
-                    top, bottom = edge_runs(sigs, self.last)
+                    top, bottom = edge_runs(self.height, kept)
+        best = self._match(sigs, top, bottom)
+        if best is None:
+            self.lost = True
+            return False
+
+        if best != self.pos:
+            if self.static_known:
+                self.top, self.bottom = top, bottom
+            else:
+                top, bottom = edge_runs(self.height, lambda r: self._stayed(sigs, r, best))
+                # Blank rows under the title bar are not worth ignoring: text may come there.
+                while top > 0 and all(b is None for b in sigs[top - 1]):
+                    top -= 1
+                self._set_static(top, bottom)
+        self.pos = best
+        self.last, self.last_rows = sigs, rows
+        self.lost = False
+        self._add_new(rows, sigs)
+        return True
+
+    def _add_new(self, rows, sigs):
+        """Add the frame rows that are not in the long image yet: above it (scrolled
+        up) or below it. The part that scrolled into view may show old pixels for a
+        moment (the window moves the old pixels first, then draws the new lines), so
+        rows added from the last read take this read's pixels if still in the frame."""
+        end = self.height - self.bottom
+        redrawn = False
+        for start, stop in self.fresh:
+            for q in range(max(start, self.pos + self.top), min(stop, self.pos + end)):
+                if self.rows[q] != rows[q - self.pos]:
+                    self.rows[q], self.sigs[q] = rows[q - self.pos], sigs[q - self.pos]
+                    redrawn = True
+        self.fresh = []
+        if self.pos < 0:
+            # Frame rows above the first line after the header are new lines: add them there.
+            new = range(self.header, min(self.header - self.pos, end))
+            self.rows[self.header:self.header] = [rows[r] for r in new]
+            self.sigs[self.header:self.header] = [sigs[r] for r in new]
+            self.pos += len(new)
+            if self.piece1_top >= self.header:
+                self.piece1_top += len(new)
+            self.piece1_end += len(new)
+            self.above += len(new)
+            self.fresh.append((self.header, self.header + len(new)))
+            redrawn = True
+        if redrawn:
+            self._index_all()
+        # Frame rows below the end of the long image are new lines: add them.
+        first = len(self.rows)
+        for r in range(max(len(self.rows) - self.pos, self.top), end):
+            self.rows.append(rows[r])
+            self.sigs.append(sigs[r])
+            self._index(len(self.sigs) - 1, sigs[r])
+        if len(self.rows) > first:
+            self.fresh.append((first, len(self.rows)))
+
+    def _match(self, sigs, top, bottom):
+        """The long row that frame row 0 shows now, or None if not found.
+        `top`, `bottom` = rows at the edges that may be static."""
         moving = range(top, self.height - bottom)
         # Long rows to compare with. Until the static rows are known, leave
         # out the maybe-static ones at the bottom of piece 1.
         long_end = len(self.sigs) if self.static_known else self.height - bottom
-
         best, best_score = None, (0, 0)
         for p in self._candidates(sigs, moving):
             if p == self.pos and not self.static_known:
@@ -192,38 +261,20 @@ class LongImage:
                 best, best_score = p, score
         rows_share, blocks_share = best_score
         if best is None or rows_share < MIN_ROWS or blocks_share < MIN_SCORE:
-            self.lost = True
-            return False
+            return None
+        return best
 
-        if best != self.pos:
-            if self.static_known:
-                self.top, self.bottom = top, bottom
-            else:
-                # Blank rows under the title bar are not worth ignoring: text may come there.
-                while top > 0 and all(b is None for b in sigs[top - 1]):
-                    top -= 1
-                self._set_static(top, bottom)
-        self.pos = best
-        self.last, self.last_rows = sigs, rows
-        self.lost = False
-        if best < 0:
-            # Frame rows above the first line after the header are new lines: add them there.
-            new = range(self.header, min(self.header - best, self.height - self.bottom))
-            self.rows[self.header:self.header] = [rows[r] for r in new]
-            self.sigs[self.header:self.header] = [sigs[r] for r in new]
-            self.pos = best = best + len(new)
-            if self.piece1_top >= self.header:
-                self.piece1_top += len(new)
-            self.piece1_end += len(new)
-            self.above += len(new)
-            self._index_all()
-        # Frame rows below the end of the long image are new lines: add them.
-        start = max(len(self.rows) - best, self.top)
-        for r in range(start, self.height - self.bottom):
-            self.rows.append(rows[r])
-            self.sigs.append(sigs[r])
-            self._index(len(self.sigs) - 1, sigs[r])
-        return True
+    def _stayed(self, sigs, r, p):
+        """First movement, found at long row p: frame row r stayed in place (static).
+        A few blocks may have changed (a window behind at the frame's edge), but such
+        a row that matches the text at its moved place is text, not static: lines
+        like `line 13  some test text` keep all blocks but the number in place."""
+        if same_place(sigs[r], self.last[r]):
+            return True
+        q = p + r
+        if not 0 <= q < len(self.sigs) or same_place(sigs[r], self.sigs[q]):
+            return False
+        return kept_place(sigs[r], self.last[r])
 
     def _static_now(self, sigs):
         """The static rows, minus rows at their inner side that changed: blank
