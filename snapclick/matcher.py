@@ -21,6 +21,7 @@ COMMON = 32  # a block found in more places than this says nothing about positio
 CANDIDATES = 5  # best-voted positions that get a full check
 CACHE = 20000  # row hashes kept; most rows of a read were in the last read, just moved
 MOVED_ROWS = 0.15  # share of rows that must change to count as a real movement
+WEAK, MOVING, STILL = 0, 1, 2  # what a read of a new row is worth: see LongImage._add_new
 MIN_WIDTH = 16  # px: never shrink the matched columns below this
 STATIC_SHARE = 0.9  # share of marked pixels that must stay put for a static column
 STATIC_ROW = 0.75  # share of blocks that must stay put for a static row
@@ -128,7 +129,11 @@ class LongImage:
         self.pos = 0
         self.lost = False
         self.last_rows = first  # the last read that was found
-        self.fresh = []  # long rows added but not seen moved yet: (start, end, pos when read)
+        # Long rows not sure yet -> (position last read at, how much that read is worth:
+        # WEAK, MOVING or STILL). Piece 1 stays as captured; the rest of the first read
+        # is weak (a floating button may sit there).
+        self.fresh = {q: (0, WEAK) for q in range(self.height) if not self.piece1_top <= q < self.piece1_end}
+        self.weak = set()  # frame rows with something that stayed in place while the text moved
         self._hash_all()
 
     def _sig(self, row):
@@ -158,9 +163,9 @@ class LongImage:
     def add_read(self, rows):
         """Match a new read of the frame and add the new lines. Returns True if found."""
         sigs = [self._sig(row) for row in rows]
-        if sigs == self.last:  # nothing moved
+        if sigs == self.last:  # nothing moved: the screen stands still
             self.lost = False
-            self._add_new(rows, sigs)
+            self._add_new(rows, sigs, STILL)
             return True
 
         if self.static_known:
@@ -193,6 +198,7 @@ class LongImage:
             return False
 
         if best != self.pos:
+            self.weak = {r for r in range(self.height) if self._stuck(sigs, r, best)}
             if self.static_known:
                 self.top, self.bottom = top, bottom
             else:
@@ -204,25 +210,35 @@ class LongImage:
         self.pos = best
         self.last, self.last_rows = sigs, rows
         self.lost = False
-        self._add_new(rows, sigs)
+        self._add_new(rows, sigs, MOVING)
         return True
 
-    def _add_new(self, rows, sigs):
+    def _add_new(self, rows, sigs, worth):
         """Add the frame rows that are not in the long image yet: above it (scrolled
         up) or below it. The part that scrolled into view may show old pixels for a
         moment (the window moves the old pixels first, then draws the new lines), and a
-        fixed button may float over the text (Claude Code's 'Jump to bottom'). So new
-        rows take each read's pixels until a read shows them moved to another place."""
+        fixed button may float over the text (Claude Code's 'Jump to bottom'), and a
+        program that redraws its screen line by line shows half old, half new lines. So
+        new rows take a read's pixels unless they came from a better read (`worth`:
+        STILL = same as the last read, MOVING, or WEAK for rows with something that
+        stayed in place while the text moved), until two still reads at different
+        places agree."""
         end = self.height - self.bottom
         redrawn = False
-        fresh, self.fresh = self.fresh, []
-        for start, stop, pos in fresh:
-            for q in range(max(start, self.pos + self.top), min(stop, self.pos + end, len(self.rows))):
-                if self.rows[q] != rows[q - self.pos]:
-                    self.rows[q], self.sigs[q] = rows[q - self.pos], sigs[q - self.pos]
-                    redrawn = True
-            if pos == self.pos:  # not moved yet
-                self.fresh.append((start, stop, pos))
+        for q in range(max(self.pos + max(self.top, self.header), 0), min(self.pos + end, len(self.rows))):
+            if q in self.fresh:  # (not in the blank rows under a title bar: they never scroll)
+                r = q - self.pos
+                now = WEAK if r in self.weak else worth
+                pos, was = self.fresh[q]
+                if self.rows[q] != rows[r]:
+                    if now >= was:
+                        self.rows[q], self.sigs[q] = rows[r], sigs[r]
+                        self.fresh[q] = self.pos, now
+                        redrawn = True
+                elif now == was == STILL and pos != self.pos:  # seen the same from another place
+                    del self.fresh[q]
+                elif now > was:
+                    self.fresh[q] = self.pos, now
         if self.pos < 0:
             # Frame rows above the first line after the header are new lines: add them there.
             new = range(self.header, min(self.header - self.pos, end))
@@ -233,19 +249,18 @@ class LongImage:
                 self.piece1_top += len(new)
             self.piece1_end += len(new)
             self.above += len(new)
-            self.fresh = [(a + len(new), b + len(new), pos + len(new)) for a, b, pos in self.fresh]
-            self.fresh.append((self.header, self.header + len(new), self.pos))
+            self.fresh = {q + len(new) * (q >= self.header): (pos + len(new), w) for q, (pos, w) in self.fresh.items()}
+            self.fresh.update((q, (self.pos, WEAK if q - self.pos in self.weak else worth))
+                              for q in range(self.header, self.header + len(new)))
             redrawn = True
         if redrawn:
             self._index_all()
         # Frame rows below the end of the long image are new lines: add them.
-        first = len(self.rows)
         for r in range(max(len(self.rows) - self.pos, self.top), end):
+            self.fresh[len(self.rows)] = self.pos, WEAK if r in self.weak else worth
             self.rows.append(rows[r])
             self.sigs.append(sigs[r])
             self._index(len(self.sigs) - 1, sigs[r])
-        if len(self.rows) > first:
-            self.fresh.append((first, len(self.rows), self.pos))
 
     def _match(self, sigs, top, bottom):
         """The long row that frame row 0 shows now, or None if not found.
@@ -267,6 +282,15 @@ class LongImage:
         if best is None or rows_share < MIN_ROWS or blocks_share < MIN_SCORE:
             return None
         return best
+
+    def _stuck(self, sigs, r, p):
+        """The text moved (now at long row p): something in frame row r stayed in place
+        and is not the text that belongs there (a floating button, a half-drawn line)."""
+        q = p + r
+        if 0 <= q < len(self.sigs) and same_place(sigs[r], self.sigs[q]):
+            return False
+        # (not the rightmost block: a scrollbar may sit there)
+        return any(a is not None and a == b for a, b in zip(sigs[r][:-1], self.last[r][:-1]))
 
     def _stayed(self, sigs, r, p):
         """First movement, found at long row p: frame row r stayed in place (static).

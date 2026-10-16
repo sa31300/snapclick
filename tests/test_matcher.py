@@ -232,6 +232,22 @@ class MatcherTest(unittest.TestCase):
         end = top + CONTENT - LINE  # rows under the button now
         self.assertEqual(long.rows[CONTENT:end], terminal.document[CONTENT:end])
 
+    def test_screen_redrawn_line_by_line(self):
+        """Claude Code redraws its whole screen from the top down: a read can show the
+        new lines at the top and the old ones below. No line may be added twice."""
+        terminal = Terminal(make_document(), title=30)
+        long = self.run_scroll(terminal, [0, 48])
+        last = 48
+        for i, top in enumerate(range(48 + LINE, 1500, LINE)):
+            now, before = terminal.view(top), terminal.view(last)
+            cut = 30 + 170  # new lines down to here, the old ones below
+            self.assertTrue(long.add_read(now[:cut] + before[cut:]), f"lost at top={top} (half drawn)")
+            if i % 4 == 3:  # now and then the screen is still for a moment
+                self.assertTrue(long.add_read(now), f"lost at top={top}")
+            last = top
+        self.assertTrue(long.add_read(terminal.view(last)))
+        self.assert_joined(long, terminal, last, slack=LINE)
+
     def test_top_line_changes_text(self):
         """Claude Code's top line shows the message you scrolled to: it changes, but
         it is no text that scrolls (it was taken for text and the stripes slid)."""
