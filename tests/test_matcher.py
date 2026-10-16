@@ -217,6 +217,21 @@ class MatcherTest(unittest.TestCase):
             last_top = top
         self.assert_above(long, terminal, 400, 256, 640)
 
+    def test_button_floating_over_the_text(self):
+        """Claude Code shows a 'Jump to bottom' button over its last line. The lines
+        under it must be kept as they look once they move up, not with the button."""
+        terminal = Terminal(make_document())
+        button = INK * 60
+        def view(top):
+            rows = terminal.view(top)
+            return rows[:-LINE] + [row[:4 * 50] + button + row[4 * 110:] for row in rows[-LINE:]]
+        long = LongImage(view(0))
+        for top in range(LINE * 3, LINE * 30, LINE * 3):
+            for _ in range(2):  # several reads at each place
+                self.assertTrue(long.add_read(view(top)), f"lost at top={top}")
+        end = top + CONTENT - LINE  # rows under the button now
+        self.assertEqual(long.rows[CONTENT:end], terminal.document[CONTENT:end])
+
     def test_scroll_back_up(self):
         terminal = Terminal(make_document())
         tops = list(range(0, 600, 7)) + list(range(600, 100, -9)) + list(range(100, 1200, 11))

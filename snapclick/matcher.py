@@ -128,7 +128,7 @@ class LongImage:
         self.pos = 0
         self.lost = False
         self.last_rows = first  # the last read that was found
-        self.fresh = []  # long rows added from the last read: (start, end) ranges
+        self.fresh = []  # long rows added but not seen moved yet: (start, end, pos when read)
         self._hash_all()
 
     def _sig(self, row):
@@ -210,16 +210,19 @@ class LongImage:
     def _add_new(self, rows, sigs):
         """Add the frame rows that are not in the long image yet: above it (scrolled
         up) or below it. The part that scrolled into view may show old pixels for a
-        moment (the window moves the old pixels first, then draws the new lines), so
-        rows added from the last read take this read's pixels if still in the frame."""
+        moment (the window moves the old pixels first, then draws the new lines), and a
+        fixed button may float over the text (Claude Code's 'Jump to bottom'). So new
+        rows take each read's pixels until a read shows them moved to another place."""
         end = self.height - self.bottom
         redrawn = False
-        for start, stop in self.fresh:
-            for q in range(max(start, self.pos + self.top), min(stop, self.pos + end)):
+        fresh, self.fresh = self.fresh, []
+        for start, stop, pos in fresh:
+            for q in range(max(start, self.pos + self.top), min(stop, self.pos + end, len(self.rows))):
                 if self.rows[q] != rows[q - self.pos]:
                     self.rows[q], self.sigs[q] = rows[q - self.pos], sigs[q - self.pos]
                     redrawn = True
-        self.fresh = []
+            if pos == self.pos:  # not moved yet
+                self.fresh.append((start, stop, pos))
         if self.pos < 0:
             # Frame rows above the first line after the header are new lines: add them there.
             new = range(self.header, min(self.header - self.pos, end))
@@ -230,7 +233,8 @@ class LongImage:
                 self.piece1_top += len(new)
             self.piece1_end += len(new)
             self.above += len(new)
-            self.fresh.append((self.header, self.header + len(new)))
+            self.fresh = [(a + len(new), b + len(new), pos + len(new)) for a, b, pos in self.fresh]
+            self.fresh.append((self.header, self.header + len(new), self.pos))
             redrawn = True
         if redrawn:
             self._index_all()
@@ -241,7 +245,7 @@ class LongImage:
             self.sigs.append(sigs[r])
             self._index(len(self.sigs) - 1, sigs[r])
         if len(self.rows) > first:
-            self.fresh.append((first, len(self.rows)))
+            self.fresh.append((first, len(self.rows), self.pos))
 
     def _match(self, sigs, top, bottom):
         """The long row that frame row 0 shows now, or None if not found.
