@@ -374,16 +374,13 @@ class StackOverlay(QWidget):
         if striped:
             self.draw_shade(p, shade, line)
 
-        # Guide lines: the strip's sides; the frame's top and bottom only while stripes are on screen.
+        # Guide lines: only the strip's sides, top to bottom of the monitor.
         dash = QPen(ACCENT, line, Qt.PenStyle.CustomDashLine)
         dash.setDashPattern([4, 3])
         p.setPen(dash)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawLine(strip.topLeft(), strip.bottomLeft())
         p.drawLine(strip.topRight(), strip.bottomRight())
-        if striped:
-            p.drawLine(frame.topLeft(), frame.topRight())
-            p.drawLine(frame.bottomLeft(), frame.bottomRight())
 
         font, bold = mono_font(s), mono_font(s, semibold=True)
         tag_x, tag_y = frame.left() + round(6 * s), top + round(6 * s)
