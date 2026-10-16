@@ -232,6 +232,22 @@ class MatcherTest(unittest.TestCase):
         end = top + CONTENT - LINE  # rows under the button now
         self.assertEqual(long.rows[CONTENT:end], terminal.document[CONTENT:end])
 
+    def test_top_line_changes_text(self):
+        """Claude Code's top line shows the message you scrolled to: it changes, but
+        it is no text that scrolls (it was taken for text and the stripes slid)."""
+        terminal = Terminal(make_document(), title=30)
+        titles = [make_title(30)] + [[bytes(reversed(row)) for row in make_title(30)]]
+        def view(top):
+            terminal.title = titles[top // 400 % 2]
+            return terminal.view(top)
+        long = LongImage(view(600))
+        tops = list(range(648, 900, 48)) + list(range(900, 100, -48)) + list(range(100, 700, 48))
+        for top in tops:
+            self.assertTrue(long.add_read(view(top)), f"lost at top={top}")
+            self.assertEqual(long.rows[long.pos + 30], terminal.document[top], f"wrong place at top={top}")
+        self.assertEqual(long.top, 30)
+        self.assertFalse(any(row in titles[0] + titles[1] for row in long.rows[long.header:]))
+
     def test_scroll_back_up(self):
         terminal = Terminal(make_document())
         tops = list(range(0, 600, 7)) + list(range(600, 100, -9)) + list(range(100, 1200, 11))

@@ -281,14 +281,18 @@ class LongImage:
         return kept_place(sigs[r], self.last[r])
 
     def _static_now(self, sigs):
-        """The static rows, minus rows at their inner side that changed: blank
-        lines can look static by chance on the first movement. Only the inner
-        side counts: the outer edge may show a window behind that changes."""
+        """The static rows, minus blank rows at their inner side that got text: blank
+        lines can look static by chance on the first movement. A static row with text
+        stays static when it changes (Claude Code's top line shows the message you
+        scrolled to). Only the inner side counts: the outer edge may show a window
+        behind that changes."""
+        def got_text(r):
+            return all(b is None for b in self.last[r]) and not same_place(sigs[r], self.last[r])
         top = self.top
-        while top > 0 and not same_place(sigs[top - 1], self.last[top - 1]):
+        while top > 0 and got_text(top - 1):
             top -= 1
         bottom = self.bottom
-        while bottom > 0 and not same_place(sigs[self.height - bottom], self.last[self.height - bottom]):
+        while bottom > 0 and got_text(self.height - bottom):
             bottom -= 1
         return top, bottom
 
