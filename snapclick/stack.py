@@ -272,12 +272,6 @@ class Stack(QObject):
         top = self.view.top() + self.long.top
         return top, self.view.top() + self.long.height - self.long.bottom
 
-    def click_rows(self):
-        """Top and bottom (exclusive) screen rows where a click ends a piece:
-        still piece 1's rows (v1.4 part B opens this to the whole view)."""
-        top, bottom = self.content()
-        return max(top, self.frame.top()), min(bottom, self.frame.bottom() + 1)
-
     def start_y(self):
         """Screen row of the start line (may be off the view)."""
         return self.view.top() + self.start() - self.long.pos
@@ -295,8 +289,8 @@ class Stack(QObject):
             if self.long.lost:
                 return
             long = self.long
-            top, bottom = self.click_rows()
-            y = min(max(point.y(), top), bottom)  # outside = the nearest edge
+            top, bottom = self.content()
+            y = min(max(point.y(), top), bottom)  # outside the view = its nearest edge
             row = min(max(long.pos + y - self.view.top(), long.header), len(long.rows))
             if row > self.end():
                 self.pieces.append(("below", row - long.above))
@@ -441,7 +435,7 @@ class StackOverlay(QWidget):
                 draw_label(p, f"↓ + {start_y - bottom} px below, recorded while scrolling", font, tag_x,
                            bottom - height - round(6 * s), ACCENT, HINT_BG, area, s, ACCENT)
             if cursor is not None:
-                self.draw_next_piece(p, cursor, *stack.click_rows(), start_y, end_y, dash, bold)
+                self.draw_size_badge(p, cursor, top, bottom, start_y, end_y, bold)
 
         if cursor is not None and area.contains(cursor):
             p.setPen(QPen(CROSSHAIR, line))
@@ -473,31 +467,18 @@ class StackOverlay(QWidget):
             x += step
         p.restore()
 
-    def draw_next_piece(self, p, cursor, top, bottom, start_y, end_y, dash, bold):
-        """Dashed box from the end line down to the mouse (or from the mouse down to
-        the start line), with the piece's full height. No edge where the piece
-        goes on off screen."""
-        frame, s = self.stack.frame, self.scale()
+    def draw_size_badge(self, p, cursor, top, bottom, start_y, end_y, bold):
+        """Size of the next piece (full height, also the part off screen), below-left
+        of the mouse. No box: the crosshair line marks where the piece ends."""
+        s = self.scale()
         mouse_y = min(max(cursor.y(), top), bottom)
-        if mouse_y > max(end_y, top):  # below the captured part
-            piece = QRect(frame.left(), max(end_y, top), frame.width(), mouse_y - max(end_y, top))
-            open_top, open_bottom = end_y < top, False
+        if mouse_y > end_y:  # below the captured part
             size = mouse_y - end_y
-            badge_y = piece.bottom() + 1 + round(6 * s)
-        elif mouse_y < min(start_y, bottom):  # above it
-            piece = QRect(frame.left(), mouse_y, frame.width(), min(start_y, bottom) - mouse_y)
-            open_top, open_bottom = False, start_y > bottom
+        elif mouse_y < start_y:  # above it
             size = start_y - mouse_y
-            badge_y = piece.top() - round(mono_font(s).pixelSize() * 1.4 + 12 * s)
         else:
             return
-        p.setPen(dash)
-        p.drawLine(piece.topLeft(), piece.bottomLeft())
-        p.drawLine(piece.topRight(), piece.bottomRight())
-        if not open_top:
-            p.drawLine(piece.topLeft(), piece.topRight())
-        if not open_bottom:
-            p.drawLine(piece.bottomLeft(), piece.bottomRight())
-        text = f"{frame.width()}×{size}"
-        draw_label(p, text, bold, piece.right() + 1 - label_width(text, bold, s), badge_y,
+        text = f"{self.stack.frame.width()}×{size}"
+        gap = round(10 * s)
+        draw_label(p, text, bold, cursor.x() - gap - label_width(text, bold, s), cursor.y() + gap,
                    QColor("black"), ACCENT, self.area, s)
