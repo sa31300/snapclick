@@ -17,6 +17,16 @@
 - Commit small steps with clear messages (e.g. `Add tray icon`).
 - After each step, tell me in 1–2 lines what changed and how to test it.
 
+## Hard rules (a past session broke these)
+- **One step, then stop.** Do one step of the spec's "Next steps", then wait for my OK. Never do two steps in one go, even if they look easy.
+- **Done = I tested it on my PC and said yes.** Passing unit tests or your own scripts is not "done".
+- **No git history rewrites** (`reset`, `rebase`, `commit --amend`, force push) unless I ask.
+- **No push, tag or release** unless I ask.
+- **Test runs use throwaway settings only**: set `SNAPCLICK_SETTINGS` to a file in a temp folder (spec §6), and a temp save folder. Never touch my real `%APPDATA%\Snapclick\settings.json` or the Windows startup entry.
+- **Antivirus (Bitdefender flags this app):** if a file write, build or run is blocked, stop and tell me. Do not work around it.
+- **Spec vs code:** if they disagree, tell me which and where. Do not change the spec on your own.
+- The Stack target is `docs/design/stack-flow.gif` + spec §2b. Check your work against both.
+
 ## The README must have
 1. One-line pitch + a GIF of the capture flow.
 2. Download (link to the latest GitHub Release `.exe`).

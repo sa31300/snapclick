@@ -1,6 +1,8 @@
-# Snapclick — Specification v1.1
+# Snapclick — Specification v1.4
 
 v1.1 adds **Stack** (§2b): long captures made of several pieces, joined into one tall image.
+v1.2 makes the Stack flow exact (owner's own words + a reference animation), adds test-only settings (§6), and a status / next-steps section (§2b). No new user features.
+v1.4 (2026-10-16): while stacking, piece 1's **rows are no limit any more**, only its columns are. Stripes follow captured lines anywhere in the column; a click anywhere in the column ends the piece there; no dashed next-piece box. Owner found this on their PC (photos of the real app).
 
 A tiny Windows tray app: press PrtSc, click two corners, the image is in your clipboard.
 
@@ -60,7 +62,25 @@ Rules:
 
 For content taller than the screen, like long terminal output. The user takes piece 1, then scrolls and clicks. Snapclick joins all pieces into **one tall image**.
 
-### Flow
+**Reference animations** (mockups with a fake terminal, not the real app; approved by the owner on 2026-10-16):
+- [`docs/design/stack-flow.gif`](design/stack-flow.gif): the whole flow, guides top to bottom, no horizontal frame lines.
+- [`docs/design/stack-no-limits.gif`](design/stack-no-limits.gif): **v1.4**. Piece 1 sits in the middle of the window; the stripes move past its old top and bottom, and a click below the old bottom ends the piece there. The red `old limit (gone)` marks only explain the change: **do not draw them**. The size badge sits next to the mouse; there is no dashed box.
+
+Neither shows **Add above** (6b); the text covers that. Where a GIF and the text seem to disagree, stop and ask.
+
+### The flow in the owner's words (this is the target)
+
+After clicking **Add below**:
+
+1. I see the previous piece as a rectangle with **yellow stripes**.
+2. I scroll down or up. The striped part moves with the text and can **leave the screen**, but I still see the **yellow dashed guide lines** that show the edges.
+3. I scroll back, and I see the striped part again.
+4. I scroll anywhere, then **click**. The new piece goes from the end of the stripes to my click, **including everything in between**, even lines that are no longer on screen.
+5. I can repeat 2–4 to add more pieces.
+
+Needs **Show preview after capture** on: the Add below button lives on the preview.
+
+### Flow (exact rules)
 
 1. PrtSc, click two corners → piece 1 (normal capture, §1). Best drawn inside the text area, but it must also work with the scrollbar or title bar inside it.
 2. On the preview, click **Add below**. The stack starts.
@@ -68,25 +88,29 @@ For content taller than the screen, like long terminal output. The user takes pi
 4. The user scrolls with the mouse wheel, as far as they want. Snapclick passes the wheel to the window under the cursor.
 5. **Left click** = end of the next piece. Everything from the end of the last piece to the click is added below, **including lines that already scrolled out of view**.
 6. Repeat 4–5 for more pieces.
+6b. **Add above** *(owner change, 2026-10-15)*: the user can also scroll **above** the striped part; Snapclick records those lines too. A **click above the top of the stripes** adds a piece from the click down to the top of the stripes, at the **top** of the joined image. A click inside the stripes does nothing. If piece 1 starts with static rows (a title bar), they stay at the very top of the joined image.
 7. Finish with **✓** on the preview, **Esc**, or **right-click**. All pieces are kept.
 
 Example: piece 1 shows lines 1–28. The user scrolls 40 lines and clicks at the bottom of the frame. Piece 2 = lines 29–68, even though lines 29–40 are no longer on screen.
 
 ### The frame
 
-- Piece 1 sets the **frame**: its columns (left/right edges) and its rows (top/bottom edges) on screen.
-- Every piece has the same width as piece 1.
-- A click below the frame counts as a click on the frame's bottom edge. A click above the end of the captured part does nothing.
+- Piece 1 sets the **column**: its left and right edges on screen. Every piece has the same width as piece 1.
+- Piece 1's top and bottom rows are **not a limit** while stacking *(owner change, 2026-10-16)*. They only say where piece 1 is in the long image. Wherever this spec says "the frame" for the stack, read: **the column, from the top to the bottom of the visible text area of the window under it** (call it the *view*).
+- A click anywhere in the view ends the piece **exactly at the click** (below the stripes: Add below; above the stripes: Add above, 6b). A click outside the view (above or below the window's text) counts as a click on the view's nearest edge. A click inside the captured part does nothing.
+- Example: piece 1 = lines 9–18 in the middle of the window. The user scrolls 9 lines and clicks near the bottom of the window, on line 41. Piece 2 = lines 19–41, even though line 41 was far below piece 1's old bottom.
 
 ### How Snapclick follows the text
 
-- While stacking, Snapclick reads the frame from the screen at least 15 times per second. Its own windows (overlay, preview) are left out of these reads.
-- It keeps a hidden **long image**: everything seen in the frame, top to bottom, with no repeats.
+- While stacking, Snapclick reads the **view** (the whole column, not only piece 1's rows) from the screen at least 15 times per second. Its own windows (overlay, preview) are left out of these reads.
+- It keeps a hidden **long image**: everything seen in the view, top to bottom, with no repeats. It grows at the bottom and at the top (lines above piece 1).
 - Each new read is matched against the long image to find how far the text moved. New lines that enter the frame are added to the long image.
 - Matching rules (tested in the prototype):
   - Cut each pixel row into **8 column blocks** and hash each block. Match by blocks, not whole rows, so a scrollbar inside the frame does not break the match.
   - Skip one-color (blank) blocks: they match everywhere.
   - Accept a position only if at least 70% of the overlapping non-blank blocks are equal.
+  - **And** at least 60% of the overlapping text rows are fully equal (ignoring the rightmost block, where a scrollbar may be). This stops look-alike lines (logs that differ only in a number) from matching at the wrong place. *(Added in v1.2 to match the tested code.)*
+  - Static edge **columns** (a strip of the window behind) are found on the first real movement and left out of matching.
   - On the first real movement, rows that stayed in the same place (title bar, padding, borders) are marked **static** and ignored from then on. Static rows at the bottom of piece 1 are cut off, so new lines join cleanly.
 - If a read cannot be matched (a big jump: dragging the scrollbar, End, PgDn), the stack is **lost**: clicks do nothing until the user scrolls back and the text is found again.
 
@@ -94,12 +118,13 @@ Example: piece 1 shows lines 1–28. The user scrolls 40 lines and clicks at the
 
 | Element | Spec |
 |---|---|
-| Outside the frame | Black at 62% opacity |
-| Frame | 1 px dashed rectangle, accent |
-| Already captured | The captured rows that are on screen: black at 62% + thin diagonal accent stripes (~40% opacity). **Sticks to the text** when scrolling down or back up. |
+| Outside the frame | Black at 62% opacity, **except** the frame's columns: from the top to the bottom of the display they stay clear (no shadow) while stacking. A click there, above or below the frame, still counts as a click on the frame's nearest edge. *(Owner change, 2026-10-15.)* |
+| Frame (guide lines) | 1 px dashed, accent. It never moves. Only the 2 vertical lines (left and right edges), always from the top to the bottom of the display. No top or bottom dashed line (as in the reference GIF). *(Owner change, 2026-10-15.)* |
+| Already captured | Every captured row that is on screen, **anywhere in the view**: black at 62% + thin diagonal accent stripes (~40% opacity). **Sticks to the text** and moves with it line by line when scrolling down or back up. It is cut only by the edges of the view (the window), **never at piece 1's old top or bottom**. *(Owner change, 2026-10-16: the real app cut the stripes at piece 1's old edges, so captured text there looked uncaptured.)* |
 | End line | 1 px solid accent line where the captured part ends. Tag `already captured ↑` at its right end (mono 12 px semibold, black on accent). |
-| Next piece | 1 px dashed accent rectangle from the end line to the mouse. Size badge (§2) shows the **full** height of the piece, including the part above the screen: `584×680`. |
-| Above-screen tag | When the end line is above the frame: tag `↑ + 340 px above, recorded while scrolling` at the frame's top-left (accent text on `#0D0E10`, 1 px accent border). |
+| Start line | Mirror of the end line, where the captured part starts, shown when it is below the view's top edge (the user scrolled up). Tag `already captured ↓` at its right end, under the line. |
+| Next piece | **No dashed box** *(owner change, 2026-10-16: its bottom edge showed as a stray horizontal dashed line, stuck at piece 1's old bottom)*. The crosshair line marks where the piece will end. Size badge (§2) next to the mouse, below-left of it, shows the **full** height of the piece including the part off screen: `584×680`. |
+| Above-screen tag | When the end line is above the view: tag `↑ + 340 px above, recorded while scrolling` at the view's top-left (accent text on `#0D0E10`, 1 px accent border). Mirror: when the start line is below the view, tag `↓ + 340 px below, recorded while scrolling` at the view's bottom-left. |
 | Hint | `[wheel] scroll   [click] end of piece 3   [esc] done` (same box as §2) |
 | Lost | Tag `jumped too far · scroll back to the shade` in `#FF6B6B` (text and border) on `#0D0E10`. Hint: `[wheel] scroll back   [esc] done`. |
 | Crosshair, magnifier | As in §2, on the live screen |
@@ -120,15 +145,22 @@ Example: piece 1 shows lines 1–28. The user scrolls 40 lines and clicks at the
 - The undo-copy rule (§2) covers the whole stack: Retake back to piece 1 restores the clipboard from before piece 1.
 - Auto-save on: save **only the final joined image**, once, when the stack is finished. No files for single pieces.
 
-### Build order (for the AI)
+### Status (2026-10-16)
 
-1. **Spike first:** pass the wheel to the window under the overlay and leave Snapclick's windows out of screen reads. Test on Windows Terminal and the classic console. If antivirus blocks it, stop and ask.
-2. Long-image matcher as plain functions (no UI) + unit tests with made-up images: scrollbar in the frame, title bar in the frame, bottom padding, fast scroll, scroll back up, big jump.
-3. Stack overlay.
-4. Preview changes, clipboard, auto-save.
-5. README (settings, how to use, GIF) — fake demo content only.
+Built (commits up to `README: long captures (stack), with demo GIF`): spike, matcher + unit tests, stack overlay, preview / clipboard / auto-save, README.
+A code review against the reference animation found **no missing behavior**: stripes follow the text, the end line and `already captured ↑`, the `↑ + N px above` tag, the next-piece box with full height, lost/found, Retake of the last piece.
 
-After each step: stop, tell the owner how to test it, and wait for an OK before the next step.
+**Not done:** the owner has **not tested or accepted** the stack yet. Steps 3–5 were done without stopping for the owner's OK. Treat the stack as **unaccepted**.
+
+### Next steps (for the AI) — one at a time, stop after each
+
+1. ~~Test-only settings (§6)~~ — done. ~~No top/bottom guide lines~~ — done (`Stack: no top or bottom guide lines, as in the reference GIF`).
+2. **v1.4, part A — reads and stripes use the view**: read the whole view, not only piece 1's rows; draw the stripes on every captured row in the view. Add matcher unit tests: piece 1 in the middle of a taller view, scroll so captured lines pass piece 1's old top and bottom. Stop; tell the owner how to see it in a test run.
+3. **v1.4, part B — clicks and next piece**: a click anywhere in the view ends the piece at the click; remove the dashed next-piece box, keep the size badge by the mouse. Stop; tell the owner how to see it.
+4. **Owner test:** give the owner the test steps for §8's Stack items, one item at a time, using a test run. Wait for their result.
+5. **Fix only what fails.** One fix per step, with a unit test if it is matcher logic. Then ask the owner to retest that item.
+6. When every Stack item in §8 passes on the owner's PC: ask before building a release.
+
 **No release** (no new `.exe` on GitHub Releases, no version tag, no push of release files) until the owner has tested the stack on their own PC and said yes.
 
 ## 3. Tray
@@ -185,11 +217,12 @@ Both fonts are open-source (OFL): bundle them with the app.
 - If PrtSc is used by Windows for the Snipping Tool, show a one-time message explaining how to turn it off: *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" → Off*. If another app holds PrtSc, a one-time message says so (capture still works from the tray icon).
 - The hotkey is fixed to PrtSc on purpose: an editable hotkey was built and then dropped (antivirus software blocked changes to the hotkey code, and it added risk for little gain).
 - Only one instance can run at a time.
+- **Test-only settings (for development, not a user feature):** if the environment variable `SNAPCLICK_SETTINGS` is set, it is the path of the settings file to use instead of `%APPDATA%\Snapclick\settings.json`. In that mode Snapclick must **never** write or delete the Windows startup entry (Run key): "Start with Windows" only changes the test file. Every test run by the AI uses this, with a file in a temp folder and a temp save folder. Not shown in the README's user sections.
 - Package as a single `.exe` with PyInstaller; publish it as a GitHub Release.
 - Stack (§2b):
   - Leave Snapclick's own windows out of screen reads with `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` (Windows 10 2004+). If it is not available, hide the overlay for the moment of each read.
   - Pass the wheel to the window under the cursor (e.g. `PostMessage(WM_MOUSEWHEEL)` to the window found under the overlay, or `SendInput` while the overlay ignores the mouse). Pick what works in the spike. No keyboard or mouse **hooks**.
-  - Screen reads use the same real-pixel capture as §1, only the frame rectangle.
+  - Screen reads use the same real-pixel capture as §1, only the view rectangle (piece 1's columns × the visible text area of the window under it). Find the window with the same window-under-the-overlay lookup used for the wheel; clip to the monitor. Static rows (title bar, tab bar, padding) are still found on the first movement and ignored.
   - Antivirus may dislike passing input to other windows. If a build or run is blocked, stop and tell the owner; do not work around it.
 
 ## 7. Not in v1
@@ -209,6 +242,11 @@ Annotations, blur, automatic scrolling capture (Snapclick scrolling by itself), 
 - [ ] README has a GIF of the flow.
 - [ ] Stack: piece 1, scroll 3 screens with the wheel, click → one image with every line exactly once (Windows Terminal and classic console).
 - [ ] Stack: the stripes stay on the captured text when scrolling back up.
+- [ ] Stack: piece 1 in the middle of the window, scroll → the stripes move line by line past piece 1's old top and bottom; captured text never looks uncaptured.
+- [ ] Stack: click near the bottom of the window, below piece 1's old bottom → the piece ends exactly at the click.
+- [ ] Stack: no horizontal dashed line at any time (no frame top/bottom, no next-piece box).
+- [ ] Stack: scroll down until the stripes leave the screen → the dashed guide lines stay; scroll back up → the stripes come back on the same lines.
+- [ ] Stack: scroll far down, click → the new piece includes the lines that left the screen (no gap, no repeat). Repeat for a 3rd piece.
 - [ ] Stack: works when piece 1 includes the scrollbar or the title bar.
 - [ ] Stack: a scrollbar jump shows the red tag; scrolling back recovers.
 - [ ] Stack: auto-save writes one file per stack, not one per piece.

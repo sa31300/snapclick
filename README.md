@@ -55,7 +55,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) |
 | Hotkey | PrtSc (fixed) |
-| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Save and Retake buttons) |
+| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Add below, Save and Retake buttons). Needed for long captures. |
 | Start with Windows | Off |
 
 ## How I built this
@@ -74,7 +74,7 @@ Key decisions and why:
 
 For the long captures (stack) the spec said: **spike first**. A small test tool checked the two risky parts on real terminals before anything else was built. Then:
 
-- **The screen stays live; Snapclick reads the frame ~20 times a second** and keeps a hidden long image of everything that scrolled through it. That is why lines that already left the screen still end up in the picture.
+- **The screen stays live; Snapclick reads the frame up to 25 times a second** and keeps a hidden long image of everything that scrolled through it. That is why lines that already left the screen still end up in the picture.
 - **Matching by column blocks, then whole rows** — 8 blocks per pixel row find the scroll position even with a scrollbar in the frame; requiring whole rows to match stops look-alike lines (logs that differ only in a number) from matching at the wrong place.
 - **Ignore what does not scroll** — title bar, padding and a strip of the window behind are found on the first scroll and left out.
 - **No keyboard or mouse hooks** — the wheel is passed on with a normal window message, and Esc while stacking is a hotkey, like PrtSc.
