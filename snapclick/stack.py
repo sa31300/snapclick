@@ -68,6 +68,16 @@ OWN_PID = ctypes.windll.kernel32.GetCurrentProcessId()
 
 DEBUG_DIR = os.environ.get("SNAPCLICK_DEBUG_DIR")  # development only (spec §6)
 DEBUG_MAX_READS = 400  # PNGs per stack, so a long test can't fill the disk
+# Raw input messages the overlay gets, logged in debug (touchpads may not send wheels)
+DEBUG_MESSAGES = {
+    0x020A: "WM_MOUSEWHEEL", 0x020E: "WM_MOUSEHWHEEL",
+    0x0119: "WM_GESTURE", 0x011A: "WM_GESTURENOTIFY", 0x0240: "WM_TOUCH",
+    0x0245: "WM_POINTERUPDATE", 0x0246: "WM_POINTERDOWN", 0x0247: "WM_POINTERUP",
+    0x0249: "WM_POINTERENTER", 0x024A: "WM_POINTERLEAVE", 0x024B: "WM_POINTERACTIVATE",
+    0x024C: "WM_POINTERCAPTURECHANGED", 0x024E: "WM_POINTERWHEEL", 0x024F: "WM_POINTERHWHEEL",
+    0x0250: "DM_POINTERHITTEST", 0x0251: "WM_POINTERROUTEDTO", 0x0252: "WM_POINTERROUTEDAWAY",
+    0x0253: "WM_POINTERROUTEDRELEASED",
+}
 
 
 # --- debug reads (development only) ----------------------------------------
@@ -402,6 +412,7 @@ class Stack(QObject):
 
     def finish(self):
         if self.running:  # Esc twice, or Esc and the Finish button: finish once
+            self.debug.log(f"end  pieces={self.count()}  lost={self.long.lost}  pos={self.long.pos}")
             self.close()
             self.finished.emit()
 
@@ -439,6 +450,15 @@ class StackOverlay(QWidget):
             self.stack.debug.log(f"wheel  angle={event.angleDelta().y()}  pixel={event.pixelDelta().y()}  "
                                  f"phase={event.phase().name}  target={class_name(target) if target else '-'}  "
                                  f"root={class_name(root) if root else '-'}")
+
+    def nativeEvent(self, event_type, message):
+        if self.stack.debug.folder and event_type == b"windows_generic_MSG":
+            msg = wintypes.MSG.from_address(int(message))
+            name = DEBUG_MESSAGES.get(msg.message)
+            if name:
+                self.stack.debug.log(f"raw  {name}  wparam={msg.wParam:#x}  lparam={msg.lParam:#x}  "
+                                     f"foreground={class_name(user32.GetForegroundWindow())}")
+        return super().nativeEvent(event_type, message)
 
     def mouseMoveEvent(self, event):
         self.stack.move(self.to_physical(event.position()))
