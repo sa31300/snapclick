@@ -10,9 +10,12 @@ Reading runs in a background thread: a screen read waits for the next screen
 refresh, and the overlay can be painted meanwhile.
 """
 import ctypes
+import os
 import threading
 import time
 from ctypes import wintypes
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import (QAbstractNativeEventFilter, QCoreApplication, QObject, QPoint, QRect, QRectF, Qt, QTimer,
                             Signal)
@@ -60,7 +63,68 @@ user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetAncestor.restype = wintypes.HWND
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 dwmapi.DwmGetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 OWN_PID = ctypes.windll.kernel32.GetCurrentProcessId()
+
+DEBUG_DIR = os.environ.get("SNAPCLICK_DEBUG_DIR")  # development only (spec §6)
+DEBUG_MAX_READS = 400  # PNGs per stack, so a long test can't fill the disk
+
+
+# --- debug reads (development only) ----------------------------------------
+
+def class_name(hwnd):
+    buffer = ctypes.create_unicode_buffer(128)
+    user32.GetClassNameW(hwnd, buffer, 128)
+    return buffer.value
+
+
+class DebugLog:
+    """Saves piece 1, every changed view read and a log line per read and per
+    wheel event into a new folder in SNAPCLICK_DEBUG_DIR. Does nothing if unset."""
+
+    def __init__(self):
+        self.folder = None
+        self.lock = threading.Lock()
+        self.saved = 0
+        self.last_rows = None
+        self.start = time.perf_counter()
+        if not DEBUG_DIR:
+            return
+        try:
+            self.folder = Path(DEBUG_DIR) / datetime.now().strftime("stack_%Y-%m-%d_%H-%M-%S")
+            self.folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self.folder = None
+
+    def log(self, text):
+        if not self.folder:
+            return
+        with self.lock:
+            try:
+                with open(self.folder / "log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"{time.perf_counter() - self.start:8.3f}  {text}\n")
+            except OSError:
+                pass
+
+    def image(self, name, image):
+        if self.folder:
+            image.save(str(self.folder / name))
+
+    def read(self, image, rows, long):
+        """One view read, after matching: save it if it changed, log the matcher state."""
+        if not self.folder:
+            return
+        changed = rows != self.last_rows
+        name = "-"
+        if changed and self.saved < DEBUG_MAX_READS:
+            self.saved += 1
+            name = f"read_{self.saved:04d}.png"
+            self.image(name, image)
+        self.last_rows = rows
+        if changed:
+            self.log(f"read {name}  {'LOST' if long.lost else 'found'}  pos={long.pos}  "
+                     f"static top={long.top} bottom={long.bottom} known={long.static_known}  "
+                     f"columns={long.left}-{long.right}  long rows={len(long.rows)}")
 
 
 # --- passing the wheel on --------------------------------------------------
@@ -106,6 +170,7 @@ def pass_wheel(overlay_hwnd, delta):
         wparam = (delta & 0xFFFF) << 16  # no keys held
         lparam = ((point.y & 0xFFFF) << 16) | (point.x & 0xFFFF)
         user32.PostMessageW(target, WM_MOUSEWHEEL, wparam, lparam)
+    return target
 
 
 def client_rows(hwnd):
@@ -154,6 +219,7 @@ class Stack(QObject):
         """`frame` = piece 1's rectangle (real pixels), `first` = piece 1's image."""
         super().__init__()
         self.frame = frame
+        self.debug = DebugLog()
         # Pieces 2, 3...: ("below", end row) or ("above", start row). Rows are
         # counted from long.above, so they stay right when lines are added above.
         self.pieces = []
@@ -184,10 +250,17 @@ class Stack(QObject):
         self.cursor = under_mouse.to_physical(under_mouse.mapFromGlobal(QCursor.pos()))
 
         # The long image starts with one read of the view, piece 1 as it was captured.
-        rows = image_rows(self.grab_live(self.view))
+        start_image = self.grab_live(self.view)
+        rows = image_rows(start_image)
         piece1 = frame.top() - self.view.top()
         rows[piece1:piece1 + frame.height()] = image_rows(first)
         self.long = LongImage(rows, (piece1, piece1 + frame.height()))
+        if self.debug.folder:
+            self.debug.image("piece1.png", first)
+            self.debug.image("view_start.png", start_image)
+            self.debug.log(f"start  frame={frame.getRect()}  view={self.view.getRect()}  "
+                           f"window={class_name(window) if target else '-'}  "
+                           f"target={class_name(target) if target else '-'}  excluded={self.excluded}")
 
         self.lock = threading.Lock()  # guards self.long and self.live
         self.shown = None  # the matcher state the overlay shows
@@ -254,10 +327,12 @@ class Stack(QObject):
             area = area.united(QRect(cursor.x() - LIVE_MARGIN, cursor.y() - LIVE_MARGIN,
                                      2 * LIVE_MARGIN + 1, 2 * LIVE_MARGIN + 1))
         image = self.grab_live(area)
-        rows = image_rows(image.copy(self.view.translated(-area.topLeft())))
+        view_image = image.copy(self.view.translated(-area.topLeft()))
+        rows = image_rows(view_image)
         with self.lock:
             self.long.add_read(rows)
             self.live = (image, area.topLeft())
+            self.debug.read(view_image, rows, self.long)
 
     def show_read(self):
         """Repaint the view if the text moved (or got lost or found)."""
@@ -358,8 +433,12 @@ class StackOverlay(QWidget):
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
-        if delta:
-            pass_wheel(int(self.winId()), delta)
+        target = pass_wheel(int(self.winId()), delta) if delta else None
+        if self.stack.debug.folder:
+            root = user32.GetAncestor(target, GA_ROOT) if target else None
+            self.stack.debug.log(f"wheel  angle={event.angleDelta().y()}  pixel={event.pixelDelta().y()}  "
+                                 f"phase={event.phase().name}  target={class_name(target) if target else '-'}  "
+                                 f"root={class_name(root) if root else '-'}")
 
     def mouseMoveEvent(self, event):
         self.stack.move(self.to_physical(event.position()))
