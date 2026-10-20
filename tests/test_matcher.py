@@ -365,6 +365,19 @@ class MatcherTest(unittest.TestCase):
         self.assertGreaterEqual(long.header, 30)
         self.assertGreaterEqual(long.piece1_top, long.header)  # the title bar is not part of piece 1
 
+    def test_piece1_with_a_lit_card_that_goes_dark(self):
+        # Browsers light up the card under the mouse; once the overlay covers the
+        # window the card goes dark. Match against the live view, keep piece 1 as captured.
+        terminal = Terminal(make_document())
+        live = terminal.view(600)
+        lit = b"\x2e\x2e\x2e\xff"
+        captured = [row.replace(BG, lit) for row in live[40:180]]  # the whole card under the mouse
+        long = LongImage(live, (40, 180), captured)
+        for top in [600, 600] + list(range(600, 900, 3 * LINE)):
+            self.assertTrue(long.add_read(terminal.view(top)), f"lost at top={top}")
+        self.assertEqual(long.picture(long.piece1_top, long.piece1_end), captured)
+        self.assertEqual(long.rows, terminal.document[600:600 + len(long.rows)])  # matching saw the live view
+
     def test_image_round_trip(self):
         rows = make_document(lines=4)
         self.assertEqual(image_rows(rows_image(rows, WIDTH)), rows)

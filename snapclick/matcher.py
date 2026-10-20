@@ -113,9 +113,11 @@ def static_columns(rows, last):
 class LongImage:
     """Everything seen in the frame so far. Frame row r shows long row `pos + r`."""
 
-    def __init__(self, first, piece1=None):
+    def __init__(self, first, piece1=None, captured=None):
         """`first` = the view's pixel rows at the start; `piece1` = (top, bottom)
-        rows of piece 1 inside it (default: all of it)."""
+        rows of piece 1 inside it (default: all of it); `captured` = piece 1's rows
+        as captured, if they differ from the live view (a card lit up under the
+        mouse): they go into the joined image, `first` is used for matching."""
         self.rows = list(first)
         self.height = len(first)  # frame height in rows
         self.left, self.right = 0, len(first[0]) // 4  # pixel columns used for matching
@@ -124,6 +126,8 @@ class LongImage:
         self.static_known = False  # set on the first real movement
         # Long rows of piece 1; they move down when lines are added above.
         self.piece1_top, self.piece1_end = piece1 or (0, self.height)
+        # Long row -> piece 1's pixels as captured (shifted like the rows)
+        self.captured = dict(zip(range(self.piece1_top, self.piece1_end), captured or ()))
         self.header = 0  # the view's rows before its first line of text; lines above go after them
         self.above = 0  # lines recorded above piece 1 so far
         self.pos = 0
@@ -135,6 +139,10 @@ class LongImage:
         self.fresh = {q: (0, WEAK) for q in range(self.height) if not self.piece1_top <= q < self.piece1_end}
         self.weak = set()  # frame rows with something that stayed in place while the text moved
         self._hash_all()
+
+    def picture(self, start, end):
+        """Long rows start..end for the joined image: piece 1 as captured, the rest as read."""
+        return [self.captured.get(q, self.rows[q]) for q in range(start, end)]
 
     def _sig(self, row):
         sig = self.cache.get(row)
@@ -250,6 +258,7 @@ class LongImage:
             self.piece1_end += len(new)
             self.above += len(new)
             self.fresh = {q + len(new) * (q >= self.header): (pos + len(new), w) for q, (pos, w) in self.fresh.items()}
+            self.captured = {q + len(new) * (q >= self.header): row for q, row in self.captured.items()}
             self.fresh.update((q, (self.pos, WEAK if q - self.pos in self.weak else worth))
                               for q in range(self.header, self.header + len(new)))
             redrawn = True
@@ -378,6 +387,7 @@ class LongImage:
         while self.header < self.height - bottom - 1 and all(b is None for b in self.sigs[self.header]):
             self.header += 1
         if bottom:
+            self.captured = {q: row for q, row in self.captured.items() if q < self.height - bottom}
             del self.rows[self.height - bottom:]
             del self.sigs[self.height - bottom:]
             self._index_all()

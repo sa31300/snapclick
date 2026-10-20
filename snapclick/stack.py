@@ -262,12 +262,12 @@ class Stack(QObject):
         under_mouse = next((o for o in self.overlays if o.screen() == mouse_screen), self.overlays[0])
         self.cursor = under_mouse.to_physical(under_mouse.mapFromGlobal(QCursor.pos()))
 
-        # The long image starts with one read of the view, piece 1 as it was captured.
+        # The long image starts with one read of the view. Matching uses this live
+        # read; the joined image uses piece 1 as it was captured (it may differ: a
+        # card lit up under the mouse goes dark once the overlay covers the window).
         start_image = self.grab_live(self.view)
-        rows = image_rows(start_image)
         piece1 = frame.top() - self.view.top()
-        rows[piece1:piece1 + frame.height()] = image_rows(first)
-        self.long = LongImage(rows, (piece1, piece1 + frame.height()))
+        self.long = LongImage(image_rows(start_image), (piece1, piece1 + frame.height()), image_rows(first))
         if self.debug.folder:
             self.debug.image("piece1.png", first)
             self.debug.image("view_start.png", start_image)
@@ -307,8 +307,8 @@ class Stack(QObject):
         """All pieces joined into one image: piece 1's part of the header (a title
         bar, if piece 1 has it), then the captured part."""
         with self.lock:
-            rows, long = self.long.rows, self.long
-            return rows_image(rows[long.piece1_top:long.header] + rows[self.start():self.end()],
+            long = self.long
+            return rows_image(long.picture(long.piece1_top, long.header) + long.picture(self.start(), self.end()),
                               self.frame.width())
 
     def grab_live(self, rect):
