@@ -68,6 +68,8 @@ OWN_PID = ctypes.windll.kernel32.GetCurrentProcessId()
 
 DEBUG_DIR = os.environ.get("SNAPCLICK_DEBUG_DIR")  # development only (spec §6)
 DEBUG_MAX_READS = 400  # PNGs per stack, so a long test can't fill the disk
+# Development only: leave the foreground window as it is (touchpad test in browsers)
+DEBUG_NO_FOREGROUND = os.environ.get("SNAPCLICK_DEBUG_NO_FOREGROUND") == "1"
 # Raw input messages the overlay gets, logged in debug (touchpads may not send wheels)
 DEBUG_MESSAGES = {
     0x020A: "WM_MOUSEWHEEL", 0x020E: "WM_MOUSEHWHEEL",
@@ -248,7 +250,8 @@ class Stack(QObject):
         self.view = QRect(frame)  # piece 1's columns, the window's full height
         if target:
             window = user32.GetAncestor(target, GA_ROOT)
-            user32.SetForegroundWindow(window)
+            if not DEBUG_NO_FOREGROUND:
+                user32.SetForegroundWindow(window)
             top, bottom = client_rows(window)
             monitor = next((o.area for o in self.overlays if o.area.contains(frame.center())), frame)
             top = max(min(top, frame.top()), monitor.top())
@@ -270,7 +273,8 @@ class Stack(QObject):
             self.debug.image("view_start.png", start_image)
             self.debug.log(f"start  frame={frame.getRect()}  view={self.view.getRect()}  "
                            f"window={class_name(window) if target else '-'}  "
-                           f"target={class_name(target) if target else '-'}  excluded={self.excluded}")
+                           f"target={class_name(target) if target else '-'}  excluded={self.excluded}  "
+                           f"no_foreground={DEBUG_NO_FOREGROUND}")
 
         self.lock = threading.Lock()  # guards self.long and self.live
         self.shown = None  # the matcher state the overlay shows
