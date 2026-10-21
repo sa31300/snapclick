@@ -230,6 +230,10 @@ Needs **Show preview after capture** on: the Draw button lives on the preview. N
 5. Esc while typing a note cancels **only that note**; a second Esc closes the window.
 6. Blur = **big square pixels** (text can't be read back).
 
+### Status (2026-10-21)
+
+Steps 1–7 built and **tested by the owner on their PC**. Step 8 (README + `docs/draw.gif`) done on the owner's go-ahead.
+
 ### Build steps (for the AI) — one at a time, stop after each
 
 1. **Draw button + empty draw window:** pen button with hover and label; click opens the window with header, toolbar (not working yet) and the picture; ✓ / Enter / Esc close it. ✓ copies the picture unchanged. *Test: single shot → Draw → Esc: nothing changes.*

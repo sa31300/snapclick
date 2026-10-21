@@ -1,4 +1,4 @@
-r"""Make docs/demo.gif and docs/stack.gif: the real overlay code, run on
+r"""Make docs/demo.gif, docs/stack.gif and docs/draw.gif: the real app code, run on
 neutral demo screens with made-up content (no real screen or site is shown).
 
     .venv\Scripts\python tools\make_demo_gif.py
@@ -9,17 +9,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image
-from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPolygon
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from snapclick import capture, stack
 from snapclick.__main__ import load_fonts
+from snapclick.draw import DrawWindow, draw_title
 from snapclick.preview import Preview
 
 DOCS = Path(__file__).resolve().parent.parent / "docs"
 OUT = DOCS / "demo.gif"
 STACK_OUT = DOCS / "stack.gif"
+DRAW_OUT = DOCS / "draw.gif"
 W, H = 960, 640  # GIF size (tall enough for the magnifier)
 SAVE_FOLDER = r"C:\Users\you\Pictures\Snapclick"  # a neutral folder name
 
@@ -404,11 +406,153 @@ def make_stack_gif(app):
     save_gif(frames, STACK_OUT)
 
 
+# --- the draw GIF ----------------------------------------------------------
+
+SHOT = QRect(116, 176, 494, 279)  # the captured part of the demo report, as in demo.gif
+
+
+def make_draw_gif(app):
+    """A shot of the demo report: Draw, box, arrow, note, mark, steps, ✓."""
+    still = QImage(W, H, QImage.Format.Format_RGB32)
+    draw_scene(still, QPoint(0, 0))
+    shot = still.copy(SHOT)
+    # Open the draw window on the sharpest monitor, so its frames are 1:1.
+    screen = min(QApplication.screens(), key=lambda s: s.devicePixelRatio())
+    preview = Preview(shot, can_save=True, save_folder=SAVE_FOLDER)
+    preview.timer.stop()
+    frames = []
+    state = {"mouse": QPoint(720, 200), "window": None}
+
+    def grab(widget):
+        image = widget.grab().toImage()
+        image.setDevicePixelRatio(1)
+        return image.scaled(widget.size(), Qt.AspectRatioMode.IgnoreAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation)
+
+    def compose(ms=70):
+        app.processEvents()
+        image = still.copy()
+        p = QPainter(image)
+        thumb = grab(preview)
+        state["thumb_at"] = QPoint(W - thumb.width() - 16, H - thumb.height() - 16)
+        p.drawImage(state["thumb_at"], thumb)
+        window = state["window"]
+        if window:
+            shown = grab(window)
+            state["window_at"] = QPoint((W - shown.width()) // 2, (H - shown.height()) // 2 - 30)
+            p.fillRect(QRect(state["window_at"], shown.size()).adjusted(-1, -1, 1, 1), QColor("#34363B"))
+            p.drawImage(state["window_at"], shown)
+        p.end()
+        pointer(image, state["mouse"])
+        frames.append((to_pil(image), ms))
+
+    def glide(end, steps=8):
+        start = state["mouse"]
+        for i in range(1, steps + 1):
+            t = i / steps
+            t = t * t * (3 - 2 * t)  # ease in/out
+            state["mouse"] = start + (end - start) * t
+            compose()
+
+    def on_picture(point):
+        """A picture pixel → GIF pixel (the canvas shows the picture 1:1)."""
+        window = state["window"]
+        return state["window_at"] + window.canvas.mapTo(window, QPoint(0, 0)) + point
+
+    def on_button(button):
+        window = state["window"]
+        return state["window_at"] + button.mapTo(window, button.rect().center()) + QPoint(2, 3)
+
+    def pick(group, name):
+        button = next(b for b in group.buttons() if b.property("name") == name)
+        glide(on_button(button), 6)
+        button.setChecked(True)
+        compose(300)
+
+    def drag(kind, start, end, steps=8):
+        window = state["window"]
+        glide(on_picture(start), 6)
+        for i in range(1, steps + 1):
+            point = start + (end - start) * (i / steps)
+            window.canvas.drag = (kind, window.color(), QPointF(start), QPointF(point))
+            window.canvas.update()
+            state["mouse"] = on_picture(point)
+            compose()
+        window.canvas.drag = None
+        window.shapes.append((kind, window.color(), QPointF(start), QPointF(end)))
+        compose(400)
+
+    compose(1000)  # "copied to clipboard"
+    glide(state["thumb_at"] + preview.buttons["draw"].center() + QPoint(2, 3), 10)
+    preview.set_hover("draw")  # "draw · mark up"
+    compose(1000)
+    preview.set_hover(None)
+    preview.hold(True)
+    window = DrawWindow(shot, draw_title("single", 1, shot), screen.geometry().center())
+    window.canvas.ratio = 1
+    state["window"] = window
+    compose(800)
+
+    drag("box", QPoint(252, 58), QPoint(338, 274))  # around the East bar
+    pick(window.tools, "arrow")
+    drag("arrow", QPoint(440, 70), QPoint(344, 118))
+    pick(window.tools, "text")
+    glide(on_picture(QPoint(372, 32)), 6)
+    canvas = window.canvas
+    canvas.note = ("text", window.color(), QPointF(372, 32), "")
+    for letter in "best region":
+        canvas.note = canvas.note[:3] + (canvas.note[3] + letter,)
+        canvas.update()
+        compose(70)
+    canvas.end_note(keep=True)
+    compose(400)
+    pick(window.tools, "mark")
+    drag("mark", QPoint(10, 14), QPoint(156, 40), 6)  # the chart's title
+    pick(window.tools, "step")
+    pick(window.colors, "blue")
+    for point in (QPoint(74, 78), QPoint(184, 134)):  # on the North and South bars
+        glide(on_picture(point), 6)
+        window.shapes.append(("step", window.color(), QPointF(point), QPointF(point)))
+        window.canvas.update()
+        compose(500)
+
+    done = next(b for b in window.findChildren(QPushButton) if b.objectName() == "done")
+    glide(on_button(done), 10)
+    compose(500)
+    result = {}
+    window.done.connect(lambda image: result.setdefault("image", image))
+    window.finish()
+    state["window"] = None
+    preview.show_drawn(result["image"])  # "copied · with drawings"
+    preview.hold(False)
+    preview.timer.stop()
+    glide(QPoint(700, 300), 8)
+    compose(1800)
+    preview.close()
+
+    # Pasted: the picture with the drawings.
+    image = QImage(W, H, QImage.Format.Format_RGB32)
+    image.fill(QColor("#2B3A4A"))
+    drawn = result["image"]
+    at = QPoint((W - drawn.width()) // 2, (H - drawn.height()) // 2 - 20)
+    p = QPainter(image)
+    p.drawImage(at, drawn)
+    p.setPen(QColor("#FFB000"))
+    p.drawRect(QRect(at - QPoint(1, 1), drawn.size() + QSize(1, 1)))
+    p.setFont(QFont("JetBrains Mono", 13))
+    p.drawText(QRect(0, at.y() + drawn.height() + 24, W, 30), Qt.AlignmentFlag.AlignCenter,
+               "Ctrl+V → the picture with drawings")
+    p.end()
+    frames.append((to_pil(image), 2400))
+    save_gif(frames, DRAW_OUT)
+
+
 def main():
     app = QApplication(sys.argv)
     load_fonts()
     make_capture_gif(app)
     make_stack_gif(app)
+    make_draw_gif(app)
 
 
 if __name__ == "__main__":

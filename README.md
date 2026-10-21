@@ -21,6 +21,7 @@ Some antivirus tools may flag Snapclick because it listens for the PrtSc key, re
 **Esc** or **right-click** cancels. A magnifier next to the cursor helps you hit the exact pixel.
 With the preview on, the thumbnail has these buttons:
 - **Add below** (square with a plus): starts a long capture, see below.
+- **Draw** (pen): mark up the picture before you paste it, see below.
 - **Save** (arrow into tray, only when auto-save is off): saves this one capture to your save folder.
 - **Retake** (back arrow): undoes the capture (clipboard and saved file) and lets you select again on the same frozen screen.
 
@@ -40,6 +41,18 @@ For things taller than the screen, like long terminal output. Snapclick joins se
 After every piece, the clipboard holds the whole joined image. **Retake** removes the last piece. With auto-save on, only the final image is saved.
 If you scroll too fast (or drag the scrollbar), Snapclick shows *jumped too far*: scroll back to the striped part and go on.
 
+### Draw on a capture
+
+Point at something before you share it: arrows, boxes, highlights, notes, blur and numbered steps.
+
+![Snapclick draw: box, arrow, note, highlight, steps, then paste](docs/draw.gif)
+
+1. With the preview on, click **Draw** (pen) on the thumbnail. The captured picture opens in its own window.
+2. Pick a tool: **arrow**, **box**, **mark** (yellow highlight), **text**, **blur** (big square pixels, so text can't be read back) or **step** (1, 2, 3…). Pick a color: red, blue or green. **Undo** removes the last one.
+3. Click **✓ done** or press **Enter**. The clipboard now holds the picture with your drawings. **Esc** closes without changes.
+
+Works after a long capture too: scroll inside the window to draw on the whole tall picture. If the capture was already saved, the file gets the drawings too. Click **Draw** again to change them.
+
 > If PrtSc opens the Windows Snipping Tool instead, turn it off in
 > *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
 > Other screenshot apps (Greenshot, ShareX, Lightshot) can also hold PrtSc — close them or change their hotkey.
@@ -55,7 +68,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) |
 | Hotkey | PrtSc (fixed) |
-| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Add below, Save and Retake buttons). Needed for long captures. |
+| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Add below, Draw, Save and Retake buttons). Needed for long captures. |
 | Start with Windows | Off |
 
 ## Known issues
@@ -86,6 +99,11 @@ For the long captures (stack) the spec said: **spike first**. A small test tool 
 - **↓ for browsers** — in Brave, touchpad scrolling never reached the overlay, and the browser ignored a passed-on wheel message. So ↓ (a hotkey while stacking) sends one real wheel notch at the first piece, while the overlay lets the mouse through for that moment.
 - **Tested end to end** — scripts drove real terminals (classic console and Windows Terminal) with real wheel input, then checked the joined image line by line: every line exactly once.
 
+For **Draw**, a mockup GIF came first ([`docs/design/annotations-flow.gif`](docs/design/annotations-flow.gif)); open questions were decided in the spec before any code. Then:
+
+- **Drawings stay a list of shapes** until you paste — so undo works, and Draw again can still change them. They are painted onto the picture in real pixels only at the end.
+- **Blur is big square pixels**, not a soft blur: each square is the average color under it, so text can't be read back.
+
 ### Build from source
 
 Use Python 3.12 from [python.org](https://www.python.org/) (Anaconda's Python is too old for Qt 6.12).
@@ -96,7 +114,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m snapclick       # run
 .venv\Scripts\python -m unittest discover tests   # tests
 .venv\Scripts\python build.py           # make dist\Snapclick.exe
-.venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif and docs/stack.gif
+.venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif, docs/stack.gif and docs/draw.gif
 ```
 
 ## License
