@@ -27,6 +27,7 @@ HEAD_LENGTH, HEAD_WIDTH = 16, 12  # arrow head, px in the picture
 MIN_DRAG = 4  # px; a shorter drag is a stray click, not a drawing
 MARK = QColor(255, 214, 0, 110)  # see-through yellow highlight, whatever color is picked
 STEP_SIZE = 26  # px in the picture: the numbered circle
+BLUR_BLOCK = 14  # px in the picture: one square of a blur
 NOTE_TEXT = 16  # px in the picture: a note's letters
 NOTE_PAD = QPointF(7, 4)  # px in the picture: room around a note's text
 
@@ -70,15 +71,34 @@ def note_box(start, text):
     return QRectF(start, start + QPointF(metrics.horizontalAdvance(text), metrics.height()) + NOTE_PAD * 2)
 
 
-def paint_shapes(p, shapes):
-    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end);
-    for a note, `end` is its text. Steps are numbered 1, 2, 3... in the order
-    they were placed."""
+def pixelate(image, rect):
+    """The picture's part under `rect` as big square pixels: each block is the
+    average color of the pixels under it, so text can't be read back."""
+    rect = rect.toAlignedRect().intersected(image.rect())
+    if rect.isEmpty():
+        return rect, None
+    blocks = image.copy(rect).scaled(math.ceil(rect.width() / BLUR_BLOCK), math.ceil(rect.height() / BLUR_BLOCK),
+                                     Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    return rect, blocks.scaled(blocks.width() * BLUR_BLOCK, blocks.height() * BLUR_BLOCK,
+                               Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+
+
+def paint_shapes(p, shapes, image):
+    """Paint the drawings on `image`, in picture pixels. Shape: (kind, color,
+    start, end); for a note, `end` is its text. Steps are numbered 1, 2, 3...
+    in the order they were placed. Blur covers what was painted before it."""
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     number = 0
     for kind, color, start, end in shapes:
         color = QColor(color)
-        if kind == "mark":
+        if kind == "blur":
+            rect, blocks = pixelate(image, QRectF(start, end).normalized())
+            if blocks:
+                p.save()
+                p.setClipRect(rect)  # the last row and column of blocks may stick out
+                p.drawImage(rect.topLeft(), blocks)
+                p.restore()
+        elif kind == "mark":
             p.fillRect(QRectF(start, end).normalized(), MARK)
         elif kind == "text":
             box = note_box(start, end)
@@ -121,14 +141,14 @@ def render(image, shapes):
     """The picture with the drawings on it, same size as the capture."""
     result = image.copy()
     p = QPainter(result)
-    paint_shapes(p, shapes)
+    paint_shapes(p, shapes, image)
     p.end()
     return result
 
 
 class Canvas(QWidget):
     """The picture at 100% (one image pixel = one screen pixel) and its drawings.
-    Drag with box, arrow or mark to add one; click with step; click with text,
+    Drag with box, arrow, mark or blur to add one; click with step; click with text,
     then type (the window passes the keys on)."""
 
     def __init__(self, owner, image, ratio):
@@ -156,7 +176,7 @@ class Canvas(QWidget):
         elif tool == "text":
             self.note = ("text", self.owner.color(), point, "")
             self.update()
-        elif tool in ("box", "arrow", "mark"):
+        elif tool in ("box", "arrow", "mark", "blur"):
             self.drag = (tool, self.owner.color(), point, point)
         elif tool == "step":
             self.owner.shapes.append(("step", self.owner.color(), point, point))
@@ -200,7 +220,7 @@ class Canvas(QWidget):
         p = QPainter(self)
         p.scale(1 / self.ratio, 1 / self.ratio)
         p.drawImage(0, 0, self.image)
-        paint_shapes(p, self.owner.shapes + [shape for shape in (self.drag, self.note) if shape])
+        paint_shapes(p, self.owner.shapes + [shape for shape in (self.drag, self.note) if shape], self.image)
         if self.note:  # the text cursor, at the end of the note
             _, color, start, text = self.note
             box = note_box(start, text)

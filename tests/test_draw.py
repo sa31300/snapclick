@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QImage, QKeyEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from snapclick.draw import COLORS, DrawWindow, draw_title
+from snapclick.draw import BLUR_BLOCK, COLORS, DrawWindow, draw_title
 from snapclick.preview import Preview
 
 app = QApplication.instance() or QApplication([])
@@ -206,6 +206,32 @@ class DrawingTest(unittest.TestCase):
         self.window.finish()  # the ✓ done button
         self.assertEqual(self.notes(), ["half"])
         self.assertEqual(self.results[0].pixelColor(32, 32), QColor("white"))
+
+    def test_blur_makes_big_square_pixels(self):
+        stripes = picture()
+        for y in range(0, stripes.height(), 2):  # thin black lines, like small text
+            for x in range(stripes.width()):
+                stripes.setPixelColor(x, y, QColor("black"))
+        self.window = DrawWindow(stripes, "shot · 300×200", QPoint(0, 0))
+        self.window.canvas.ratio = 1
+        self.window.done.connect(self.results.append)
+        self.pick(self.window.tools, "blur")
+        self.drag(QPoint(28, 28), QPoint(128, 98))
+        self.window.finish()
+        image = self.results[0]
+        block = BLUR_BLOCK
+        colors = {image.pixelColor(28 + dx, 28 + dy).name() for dx in range(block) for dy in range(block)}
+        self.assertEqual(len(colors), 1)  # one square = one color
+        self.assertNotIn(colors.pop(), ("#000000", "#336699"))  # the lines are gone, averaged away
+        self.assertEqual(image.pixelColor(200, 150), stripes.pixelColor(200, 150))  # outside unchanged
+        self.assertEqual(image.pixelColor(129, 50), stripes.pixelColor(129, 50))  # just right of the blur
+
+    def test_blur_covers_drawings_made_before_it(self):
+        self.drag(QPoint(40, 40), QPoint(100, 80))  # a red box
+        self.pick(self.window.tools, "blur")
+        self.drag(QPoint(20, 20), QPoint(120, 100))
+        self.window.finish()
+        self.assertNotEqual(self.results[0].pixelColor(40, 60), QColor(COLORS["red"]))
 
     def test_preview_label_after_done(self):
         preview = Preview(picture(), can_save=True, save_folder="demo")
