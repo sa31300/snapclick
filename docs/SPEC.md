@@ -1,8 +1,9 @@
-# Snapclick — Specification v1.4
+# Snapclick — Specification v1.5
 
 v1.1 adds **Stack** (§2b): long captures made of several pieces, joined into one tall image.
 v1.2 makes the Stack flow exact (owner's own words + a reference animation), adds test-only settings (§6), and a status / next-steps section (§2b). No new user features.
 v1.4 (2026-10-16): while stacking, piece 1's **rows are no limit any more**, only its columns are. Stripes follow captured lines anywhere in the column; a click anywhere in the column ends the piece there; no dashed next-piece box. Owner found this on their PC (photos of the real app).
+v1.5 (2026-10-21): adds **Draw** (§2c): mark up a capture (arrows, boxes, highlights, notes, blur, steps) before it goes to the clipboard. Stack: **↓** scrolls one notch (§2b, 4b).
 
 A tiny Windows tray app: press PrtSc, click two corners, the image is in your clipboard.
 
@@ -48,7 +49,8 @@ Rules:
 |---|---|---|---|
 | **Save** (only when auto-save is **off**; left of Retake) | arrow into a tray | Button turns baby blue `#8FD3FF` (black icon); label shows the save folder (in baby blue) | Saves the file (same folder, name and format rules as auto-save). Feedback: a quick white flash on the image, the icon turns into a green `#3DDC97` check, one green glow pulse around the button, label shows `saved ✓ <file name>` in green. After that the button stays a green check and does nothing (no duplicate files). |
 | **Retake** | back arrow | Button turns amber `#FFB000` (black icon); the image gets a light amber tint; label shows `retake · undo copy` (in amber) | **Undo and retake** (below) |
-| **Add below** (first button, left of Save) | square with a plus under it | Button turns `#E7E7E4` (black icon); label shows `add below · start a stack` (in `#E7E7E4`) | Starts a **Stack** (§2b) |
+| **Add below** (first button, left of Draw) | square with a plus under it | Button turns `#E7E7E4` (black icon); label shows `add below · start a stack` (in `#E7E7E4`) | Starts a **Stack** (§2b) |
+| **Draw** (between Add below and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the draw window (§2c) |
 
 - **Undo and retake**:
   1. Restores the clipboard to what it was before this capture (only if nothing else was copied since — never overwrite a newer copy).
@@ -169,6 +171,76 @@ A code review against the reference animation found **no missing behavior**: str
 
 **No release** (no new `.exe` on GitHub Releases, no version tag, no push of release files) until the owner has tested the stack on their own PC and said yes.
 
+## 2c. Draw — annotations
+
+*(Added in v1.5, 2026-10-21, owner approved.)* Mark up a capture before pasting it: arrows, boxes, highlights, notes, blur, numbered steps.
+
+**Reference animation** (mockup with a fake ledger screen, not the real app; approved by the owner on 2026-10-21): [`docs/design/annotations-flow.gif`](design/annotations-flow.gif). Where the GIF and the text seem to disagree, stop and ask.
+
+Needs **Show preview after capture** on: the Draw button lives on the preview. Not clicking Draw = no change from today.
+
+### Draw button (on the preview)
+
+| Button | Icon | Hover | Click |
+|---|---|---|---|
+| **Draw** (between Add below and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the **draw window** (below) |
+
+- Button order on the preview: **Add below · Draw · Save · Retake** (Save only when auto-save is off, as today).
+- Shown for a single shot and after a stack is finished. **Hidden while stacking** (like Save and Add below).
+- While the draw window is open, the preview stays open (no 3 s timer). After ✓ done or Esc, the normal 3 s timer starts again.
+
+### Draw window
+
+- Opens with the **captured picture** (the frozen image, not the live screen): the single shot, or the whole joined image after a stack.
+- Its own window, style B: background `#0D0E10`, mono font, square corners, 1 px `#34363B` borders. Opens on the monitor of the preview, centered, at most about 90% of that monitor.
+- **Header** (mono, muted): left `snapclick · draw`; right `shot · 810×282` for a single shot, or `stack · 3 pieces · 810×1050` after a stack (real pixels of the picture).
+- **Picture** at 100% (real pixels). If it is bigger than the window, **scroll inside the window** (wheel, touchpad or the scrollbar) — e.g. a tall stack. The toolbar and header stay in place.
+- **Toolbar** (one row, under the header), left to right:
+
+| Item | What it does |
+|---|---|
+| **→ arrow** | Drag from start to end: a straight arrow with a head at the end. |
+| **□ box** | Drag a rectangle: outline only. |
+| **▬ mark** | Drag a rectangle: see-through **yellow** highlight over the picture (always yellow, ignores the color). |
+| **T text** | Click to place a note, type it. Bold sans text in the color, on a white box with a 1 px border in the color. Enter or a click elsewhere ends the note. |
+| **▦ blur** | Drag a rectangle: the area is made unreadable in the final picture. |
+| **1 step** | Each click places a filled circle in the color with a white number: 1, 2, 3… (counts up per picture; undo takes the number back). |
+| **3 colors** | Red (default), blue, green. Used by arrow, box, text and step. |
+| **↶ undo** | Removes the last drawing. As many times as needed. |
+| **✓ done** | Green (`#3DDC97`) text and border. Finishes (below). |
+
+- The chosen tool shows **violet** (`#B197FC` background, black text). Start tool: **box**.
+- Drawings are part of the picture in real pixels (same size as the capture, nothing cut or scaled).
+
+### Finish or cancel
+
+- **✓ done** or **Enter** (when not typing a note): the window closes. The **clipboard** gets the picture **with drawings**, the **thumbnail** shows it, the label shows `copied · with drawings` in green (`#3DDC97`).
+- After that, **Save** saves the picture with drawings (same name and folder rules as today).
+- **Esc**: the window closes, nothing changes (clipboard, thumbnail and files stay as they were).
+- **Retake** after drawing works as today (§2): the clipboard goes back to what it was before the capture, if nothing newer was copied.
+
+### Open questions (owner, please decide before the build)
+
+1. **Auto-save on, or Save already clicked:** a file was written before drawing. After ✓ done, overwrite that file with the drawn picture? *(Proposal: yes, same file name.)*
+2. **Draw again after ✓ done:** are the old drawings still editable (undo works), or does the window open on the flat picture? *(Proposal: still editable, for this capture only.)*
+3. **After a stack, the GIF shows Add below** on the finished preview; §2b says Add below stays hidden after finishing. Which one? *(Proposal: keep §2b, hidden.)*
+4. **Label after a stack:** the GIF shows `stack · 3 pieces · copied`; §2b says `copied · 3 pieces · 584×1256`. Which one? *(Proposal: keep §2b.)*
+5. **Esc while typing a note:** cancel only that note, or close the whole window? *(Proposal: only the note; a second Esc closes the window.)*
+6. **Blur look:** big square pixels (safe: text can't be read back) or a soft blur? *(Proposal: big square pixels.)*
+
+### Build steps (for the AI) — one at a time, stop after each
+
+1. **Draw button + empty draw window:** pen button with hover and label; click opens the window with header, toolbar (not working yet) and the picture; ✓ / Enter / Esc close it. ✓ copies the picture unchanged. *Test: single shot → Draw → Esc: nothing changes.*
+2. **Box, arrow, colors, undo; ✓ copies with drawings:** clipboard, thumbnail and label `copied · with drawings`. *Test: draw a red box and a blue arrow, ✓, paste into Paint.*
+3. **Mark and step.** *Test: highlight a number, place steps 1–3, undo one, add again → numbers stay in order.*
+4. **Text** (Enter, click elsewhere, Esc while typing as decided in question 5). *Test: write a note, ✓, paste.*
+5. **Blur.** *Test: blur a line of text, ✓, paste, zoom in: it can't be read.*
+6. **Stack:** draw on a tall joined picture, scroll inside the window. *Test: 3-piece stack, Draw, scroll to the bottom, box a line, ✓, paste: the full tall picture with the box.*
+7. **Save and auto-save with drawings, Retake after drawing** (as decided in question 1). *Test: Draw → ✓ → Save → open the file; auto-save on → Draw → ✓ → file has the drawings; Retake → clipboard back.*
+8. **README** (How to use + GIF of the draw flow, fake content only). Ask first.
+
+**No release** until the owner has tested Draw on their own PC and said yes.
+
 ## 3. Tray
 
 - Icon: **corner brackets** (4 L-shaped corners, square line caps).
@@ -235,7 +307,7 @@ Both fonts are open-source (OFL): bundle them with the app.
 
 ## 7. Not in v1
 
-Annotations, blur, automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking, editable hotkey, upload/sharing, OCR. (Ideas for later.)
+Automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking, editable hotkey, upload/sharing, OCR. (Ideas for later.)
 
 ## 8. Done when
 
@@ -258,3 +330,7 @@ Annotations, blur, automatic scrolling capture (Snapclick scrolling by itself), 
 - [ ] Stack: works when piece 1 includes the scrollbar or the title bar.
 - [ ] Stack: a scrollbar jump shows the red tag; scrolling back recovers.
 - [ ] Stack: auto-save writes one file per stack, not one per piece.
+- [ ] Draw: single shot → Draw → box, arrow, mark, text, blur, steps → ✓ → paste shows every drawing.
+- [ ] Draw: after a 3-piece stack, scroll inside the draw window, draw at the bottom → ✓ → paste shows the full tall picture with it.
+- [ ] Draw: Esc → nothing changes. Not clicking Draw → same as today.
+- [ ] Draw: Save after ✓ writes the picture with drawings.
