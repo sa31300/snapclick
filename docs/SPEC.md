@@ -202,8 +202,8 @@ Needs **Show preview after capture** on: the Draw button lives on the preview. N
 | **→ arrow** | Drag from start to end: a straight arrow with a head at the end. |
 | **□ box** | Drag a rectangle: outline only. |
 | **▬ mark** | Drag a rectangle: see-through **yellow** highlight over the picture (always yellow, ignores the color). |
-| **T text** | Click to place a note, type it. Bold sans text in the color, on a white box with a 1 px border in the color. Enter or a click elsewhere ends the note. |
-| **▦ blur** | Drag a rectangle: the area is made unreadable in the final picture. |
+| **T text** | Click to place a note, type it. Bold sans text in the color, on a white box with a 1 px border in the color. Enter or a click elsewhere ends the note. **Esc while typing cancels only that note** (a second Esc closes the window). |
+| **▦ blur** | Drag a rectangle: the area becomes **big square pixels** in the final picture, so its text can't be read back. |
 | **1 step** | Each click places a filled circle in the color with a white number: 1, 2, 3… (counts up per picture; undo takes the number back). |
 | **3 colors** | Red (default), blue, green. Used by arrow, box, text and step. |
 | **↶ undo** | Removes the last drawing. As many times as needed. |
@@ -216,27 +216,29 @@ Needs **Show preview after capture** on: the Draw button lives on the preview. N
 
 - **✓ done** or **Enter** (when not typing a note): the window closes. The **clipboard** gets the picture **with drawings**, the **thumbnail** shows it, the label shows `copied · with drawings` in green (`#3DDC97`).
 - After that, **Save** saves the picture with drawings (same name and folder rules as today).
+- If a file was already written for this capture (auto-save on, or Save clicked), ✓ done **overwrites that file** with the drawn picture (same file name).
+- **Draw again** after ✓ done: the window opens with the drawings **still editable** (undo works), for this capture only.
 - **Esc**: the window closes, nothing changes (clipboard, thumbnail and files stay as they were).
 - **Retake** after drawing works as today (§2): the clipboard goes back to what it was before the capture, if nothing newer was copied.
 
-### Open questions (owner, please decide before the build)
+### Decisions (owner, 2026-10-21)
 
-1. **Auto-save on, or Save already clicked:** a file was written before drawing. After ✓ done, overwrite that file with the drawn picture? *(Proposal: yes, same file name.)*
-2. **Draw again after ✓ done:** are the old drawings still editable (undo works), or does the window open on the flat picture? *(Proposal: still editable, for this capture only.)*
-3. **After a stack, the GIF shows Add below** on the finished preview; §2b says Add below stays hidden after finishing. Which one? *(Proposal: keep §2b, hidden.)*
-4. **Label after a stack:** the GIF shows `stack · 3 pieces · copied`; §2b says `copied · 3 pieces · 584×1256`. Which one? *(Proposal: keep §2b.)*
-5. **Esc while typing a note:** cancel only that note, or close the whole window? *(Proposal: only the note; a second Esc closes the window.)*
-6. **Blur look:** big square pixels (safe: text can't be read back) or a soft blur? *(Proposal: big square pixels.)*
+1. Auto-save on, or Save already clicked: ✓ done **overwrites** that file with the drawn picture (same file name).
+2. Draw again after ✓ done: the drawings are **still editable** (undo works), for this capture only.
+3. After a stack, **Add below stays hidden** (§2b). The mockup GIF showing it there is wrong on this point.
+4. Label after a stack: `copied · 3 pieces · 584×1256` (§2b). The mockup GIF's `stack · 3 pieces · copied` is wrong on this point.
+5. Esc while typing a note cancels **only that note**; a second Esc closes the window.
+6. Blur = **big square pixels** (text can't be read back).
 
 ### Build steps (for the AI) — one at a time, stop after each
 
 1. **Draw button + empty draw window:** pen button with hover and label; click opens the window with header, toolbar (not working yet) and the picture; ✓ / Enter / Esc close it. ✓ copies the picture unchanged. *Test: single shot → Draw → Esc: nothing changes.*
 2. **Box, arrow, colors, undo; ✓ copies with drawings:** clipboard, thumbnail and label `copied · with drawings`. *Test: draw a red box and a blue arrow, ✓, paste into Paint.*
 3. **Mark and step.** *Test: highlight a number, place steps 1–3, undo one, add again → numbers stay in order.*
-4. **Text** (Enter, click elsewhere, Esc while typing as decided in question 5). *Test: write a note, ✓, paste.*
+4. **Text** (Enter or a click elsewhere ends the note; Esc while typing cancels only that note). *Test: write a note, ✓, paste.*
 5. **Blur.** *Test: blur a line of text, ✓, paste, zoom in: it can't be read.*
 6. **Stack:** draw on a tall joined picture, scroll inside the window. *Test: 3-piece stack, Draw, scroll to the bottom, box a line, ✓, paste: the full tall picture with the box.*
-7. **Save and auto-save with drawings, Retake after drawing** (as decided in question 1). *Test: Draw → ✓ → Save → open the file; auto-save on → Draw → ✓ → file has the drawings; Retake → clipboard back.*
+7. **Save and auto-save with drawings** (✓ done overwrites a file already written), **Draw again keeps the drawings editable, Retake after drawing**. *Test: Draw → ✓ → Save → open the file; auto-save on → Draw → ✓ → the same file now has the drawings; Draw again → undo works; Retake → clipboard back.*
 8. **README** (How to use + GIF of the draw flow, fake content only). Ask first.
 
 **No release** until the owner has tested Draw on their own PC and said yes.
