@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from snapclick import settings
 from snapclick.capture import Capture, clipboard_version, restore_clipboard
+from snapclick.draw import DrawWindow, draw_title
 from snapclick.preview import Preview
 from snapclick.stack import Stack
 from snapclick.settings_window import SettingsWindow
@@ -74,6 +75,7 @@ class Tray(QSystemTrayIcon):
         self.capture = None  # the running capture, if any
         self.settings_window = None
         self.preview = None
+        self.draw_window = None  # the open draw window (§2c), if any
         self.stack = None  # the running stack (long capture), if any
         self.undo = None  # what the preview's Retake needs to undo the last capture
         self.hotkey = None  # GlobalHotkey, set by main
@@ -152,6 +154,7 @@ class Tray(QSystemTrayIcon):
             self.preview.retake.connect(self.undo_and_retake)
             self.preview.save_requested.connect(self.save_from_preview)
             self.preview.add_below.connect(self.start_stack)
+            self.preview.draw.connect(self.open_draw)
             self.preview.finish.connect(self.finish_stack)
             self.preview.closed.connect(self._preview_closed)
 
@@ -165,6 +168,27 @@ class Tray(QSystemTrayIcon):
 
     def _preview_closed(self):
         self.undo = None  # free the frozen screen
+        if self.draw_window:  # its picture belongs to this preview
+            window, self.draw_window = self.draw_window, None
+            window.closed.disconnect(self._draw_closed)
+            window.close()
+
+    def open_draw(self):
+        """Mark up the captured picture in its own window (§2c)."""
+        if self.draw_window:
+            self.draw_window.raise_()
+            self.draw_window.activateWindow()
+            return
+        p = self.preview
+        p.hold(True)
+        self.draw_window = DrawWindow(p.image, draw_title(p.mode, p.count, p.image), p.home)
+        self.draw_window.done.connect(self.copy)
+        self.draw_window.closed.connect(self._draw_closed)
+
+    def _draw_closed(self):
+        self.draw_window = None
+        if self.preview:
+            self.preview.hold(False)
 
     def close_preview(self):
         if self.preview:
@@ -202,7 +226,7 @@ class Tray(QSystemTrayIcon):
         self.preview.finish_stack(image, stack.count(), saved_path)
 
     def copy(self, image, only_if_ours=False):
-        """Put a stack image on the clipboard. `only_if_ours`: not if something
+        """Put a stack or drawn image on the clipboard. `only_if_ours`: not if something
         else was copied since our last copy."""
         if only_if_ours and clipboard_version() != self.undo["clipboard_version"]:
             return

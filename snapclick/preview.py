@@ -1,5 +1,5 @@
-"""Small thumbnail shown bottom-right after a capture, with Add below, Save and
-Retake buttons. While stacking (§2b) it shows the joined image and Finish."""
+"""Small thumbnail shown bottom-right after a capture, with Add below, Draw, Save
+and Retake buttons. While stacking (§2b) it shows the joined image and Finish."""
 import subprocess
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, QVariantAnimation, Signal
@@ -27,7 +27,8 @@ TEXT = QColor("#E7E7E4")
 AMBER = QColor("#FFB000")
 BLUE = QColor("#8FD3FF")
 GREEN = QColor("#3DDC97")
-HOVER_COLORS = {"retake": AMBER, "save": BLUE, "add": TEXT, "finish": GREEN}
+VIOLET = QColor("#B197FC")
+HOVER_COLORS = {"retake": AMBER, "save": BLUE, "add": TEXT, "finish": GREEN, "draw": VIOLET}
 
 
 def draw_icon(p, name, box, color):
@@ -61,6 +62,15 @@ def draw_icon(p, name, box, color):
         path.lineTo(10, 17)
         path.moveTo(7.25, 14.25)
         path.lineTo(12.75, 14.25)
+    elif name == "draw":  # pen, tip bottom-left
+        path.moveTo(12.5, 4.5)
+        path.lineTo(15.5, 7.5)
+        path.lineTo(7.5, 15.5)
+        path.lineTo(4.5, 15.5)
+        path.lineTo(4.5, 12.5)
+        path.closeSubpath()
+        path.moveTo(10.5, 6.5)
+        path.lineTo(13.5, 9.5)
     elif name in ("check", "finish"):
         path.moveTo(5, 10.5)
         path.lineTo(8.5, 14)
@@ -73,6 +83,7 @@ class Preview(QWidget):
     retake = Signal()  # undo this capture (or the last stack piece) and select again
     save_requested = Signal()
     add_below = Signal()  # start a stack
+    draw = Signal()  # open the draw window (§2c)
     finish = Signal()  # stop adding to the stack
     closed = Signal()
 
@@ -91,6 +102,7 @@ class Preview(QWidget):
         self.hover = None  # a button name, "link" (the file name) or None
         self.mode = "single"  # "single", "stacking" or "stacked"
         self.count = 1  # stack pieces
+        self.held = False  # stays open while the draw window is open
         self.home = QCursor.pos()  # the preview shows on this point's monitor
 
         self.label_font = QFont("JetBrains Mono")
@@ -116,7 +128,7 @@ class Preview(QWidget):
         """Buttons, left to right."""
         if self.mode == "stacking":
             return ["finish", "retake"]
-        names = ["add"] if self.mode == "single" else []
+        names = ["add", "draw"] if self.mode == "single" else ["draw"]
         if self.can_save:
             names.append("save")
         return names + ["retake"]
@@ -175,6 +187,14 @@ class Preview(QWidget):
         self.save_state = "failed"
         self.update()
 
+    def hold(self, on):
+        """No 3 s timer while the draw window is open."""
+        self.held = on
+        if on:
+            self.timer.stop()
+        elif not self.underMouse():
+            self.timer.start()
+
     def start_stack(self):
         """Stay open, show Finish and Retake, never appear in screen reads."""
         self.mode = "stacking"
@@ -205,7 +225,7 @@ class Preview(QWidget):
 
     def leaveEvent(self, event):
         self.set_hover(None)
-        if self.mode != "stacking":
+        if self.mode != "stacking" and not self.held:
             self.timer.start()
 
     def mouseMoveEvent(self, event):
@@ -234,6 +254,8 @@ class Preview(QWidget):
             self.save_requested.emit()
         elif name == "add":
             self.add_below.emit()
+        elif name == "draw":
+            self.draw.emit()
         elif name == "finish":
             self.finish.emit()
         elif name is None and self.label_parts()[2] and self.label_parts()[2].contains(pos):
@@ -266,6 +288,8 @@ class Preview(QWidget):
             return "retake · undo copy", None, AMBER
         if self.hover == "add":
             return "add below · start a stack", None, TEXT
+        if self.hover == "draw":
+            return "draw · mark up", None, VIOLET
         if self.save_state == "saved":
             return "saved ✓ ", self.saved_path.name, GREEN
         if self.save_state == "failed":
