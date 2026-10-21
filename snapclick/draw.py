@@ -7,7 +7,7 @@ top; ✓ done or Enter gives the picture back with them; Esc closes with no chan
 import math
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
@@ -27,6 +27,8 @@ HEAD_LENGTH, HEAD_WIDTH = 16, 12  # arrow head, px in the picture
 MIN_DRAG = 4  # px; a shorter drag is a stray click, not a drawing
 MARK = QColor(255, 214, 0, 110)  # see-through yellow highlight, whatever color is picked
 STEP_SIZE = 26  # px in the picture: the numbered circle
+NOTE_TEXT = 16  # px in the picture: a note's letters
+NOTE_PAD = QPointF(7, 4)  # px in the picture: room around a note's text
 
 STYLE = f"""
 QWidget#draw {{ background: {BG}; border: 1px solid {BORDER}; }}
@@ -55,15 +57,37 @@ def draw_title(mode, count, image):
     return f"stack · {count} {'piece' if count == 1 else 'pieces'} · {size}"
 
 
+def note_font():
+    font = QFont("IBM Plex Sans")
+    font.setPixelSize(NOTE_TEXT)
+    font.setBold(True)
+    return font
+
+
+def note_box(start, text):
+    """The white box of a note whose top-left corner is `start`."""
+    metrics = QFontMetricsF(note_font())
+    return QRectF(start, start + QPointF(metrics.horizontalAdvance(text), metrics.height()) + NOTE_PAD * 2)
+
+
 def paint_shapes(p, shapes):
-    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end).
-    Steps are numbered 1, 2, 3... in the order they were placed."""
+    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end);
+    for a note, `end` is its text. Steps are numbered 1, 2, 3... in the order
+    they were placed."""
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     number = 0
     for kind, color, start, end in shapes:
         color = QColor(color)
         if kind == "mark":
             p.fillRect(QRectF(start, end).normalized(), MARK)
+        elif kind == "text":
+            box = note_box(start, end)
+            p.setPen(QPen(color, 1))
+            p.setBrush(QColor("white"))
+            p.drawRect(box.adjusted(0.5, 0.5, -0.5, -0.5))  # a crisp 1 px border, not 2 faded ones
+            p.setFont(note_font())
+            p.drawText(box.adjusted(NOTE_PAD.x(), NOTE_PAD.y(), -NOTE_PAD.x(), -NOTE_PAD.y()),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, end)
         elif kind == "step":
             number += 1
             circle = QRectF(0, 0, STEP_SIZE, STEP_SIZE)
@@ -104,7 +128,8 @@ def render(image, shapes):
 
 class Canvas(QWidget):
     """The picture at 100% (one image pixel = one screen pixel) and its drawings.
-    Drag with box, arrow or mark to add one; click with step."""
+    Drag with box, arrow or mark to add one; click with step; click with text,
+    then type (the window passes the keys on)."""
 
     def __init__(self, owner, image, ratio):
         super().__init__()
@@ -112,6 +137,7 @@ class Canvas(QWidget):
         self.image = image
         self.ratio = ratio  # screen pixels per Qt point on this monitor
         self.drag = None  # the shape being drawn
+        self.note = None  # the note being typed: ("text", color, start, text so far)
         self.setFixedSize(QSize(round(image.width() / ratio), round(image.height() / ratio)))
         self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -125,7 +151,12 @@ class Canvas(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         point = self.to_picture(event.position())
-        if tool in ("box", "arrow", "mark"):
+        if self.note:  # a click elsewhere ends the note, and does nothing else
+            self.end_note(keep=True)
+        elif tool == "text":
+            self.note = ("text", self.owner.color(), point, "")
+            self.update()
+        elif tool in ("box", "arrow", "mark"):
             self.drag = (tool, self.owner.color(), point, point)
         elif tool == "step":
             self.owner.shapes.append(("step", self.owner.color(), point, point))
@@ -145,11 +176,37 @@ class Canvas(QWidget):
                 self.owner.shapes.append((kind, color, start, end))
             self.update()
 
+    def type_key(self, event):
+        """A key while typing a note: Enter keeps it, Esc drops only the note."""
+        kind, color, start, text = self.note
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.end_note(keep=True)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.end_note(keep=False)
+        elif event.key() == Qt.Key.Key_Backspace:
+            self.note = (kind, color, start, text[:-1])
+        elif event.text().isprintable() and event.text():
+            self.note = (kind, color, start, text + event.text())
+        self.update()
+
+    def end_note(self, keep):
+        """Stop typing. An empty note is dropped."""
+        if keep and self.note[3].strip():
+            self.owner.shapes.append(self.note)
+        self.note = None
+        self.update()
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.scale(1 / self.ratio, 1 / self.ratio)
         p.drawImage(0, 0, self.image)
-        paint_shapes(p, self.owner.shapes + ([self.drag] if self.drag else []))
+        paint_shapes(p, self.owner.shapes + [shape for shape in (self.drag, self.note) if shape])
+        if self.note:  # the text cursor, at the end of the note
+            _, color, start, text = self.note
+            box = note_box(start, text)
+            x = box.right() - NOTE_PAD.x() + 1
+            p.setPen(QPen(QColor(color), 2))
+            p.drawLine(QPointF(x, box.top() + NOTE_PAD.y()), QPointF(x, box.bottom() - NOTE_PAD.y()))
 
 
 class DrawWindow(QWidget):
@@ -244,16 +301,22 @@ class DrawWindow(QWidget):
         return COLORS[self.colors.checkedButton().property("name")]
 
     def undo(self):
-        if self.shapes:
+        if self.canvas.note:  # while typing: drop the note
+            self.canvas.end_note(keep=False)
+        elif self.shapes:
             self.shapes.pop()
             self.canvas.update()
 
     def finish(self):
+        if self.canvas.note:  # keep the note being typed
+            self.canvas.end_note(keep=True)
         self.done.emit(render(self.image, self.shapes))
         self.close()
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+        if self.canvas.note:
+            self.canvas.type_key(event)
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.finish()
         elif event.key() == Qt.Key.Key_Escape:
             self.close()

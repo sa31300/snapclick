@@ -158,6 +158,55 @@ class DrawingTest(unittest.TestCase):
         self.assertEqual(self.results[0].pixelColor(220 - 11, 100), QColor(COLORS["red"]))  # the circle
         self.assertEqual(self.results[0].pixelColor(160 - 11, 100), QColor("#336699"))  # undone
 
+    def type_note(self, point, text):
+        self.pick(self.window.tools, "text")
+        self.click(point)
+        QTest.keyClicks(self.window, text)
+
+    def notes(self):
+        return [shape[3] for shape in self.window.shapes if shape[0] == "text"]
+
+    def test_note_with_enter(self):
+        self.type_note(QPoint(30, 30), "wrong segmentt")
+        QTest.keyClick(self.window, Qt.Key.Key_Backspace)
+        QTest.keyClick(self.window, Qt.Key.Key_Return)  # ends the note, not the window
+        self.assertEqual(self.notes(), ["wrong segment"])
+        self.assertEqual(self.results, [])
+        QTest.keyClick(self.window, Qt.Key.Key_Return)  # now Enter is ✓ done
+        image = self.results[0]
+        self.assertEqual(image.pixelColor(32, 32), QColor("white"))  # inside the note's box
+        self.assertEqual(image.pixelColor(30, 40), QColor(COLORS["red"]))  # its 1 px border
+
+    def test_click_elsewhere_ends_the_note(self):
+        self.type_note(QPoint(30, 30), "first")
+        self.click(QPoint(200, 150))  # ends it, does not start a new one
+        self.assertEqual(self.notes(), ["first"])
+        self.assertIsNone(self.window.canvas.note)
+
+    def test_esc_while_typing_drops_only_the_note(self):
+        closed = []
+        self.window.closed.connect(lambda: closed.append(True))
+        self.drag(QPoint(50, 40), QPoint(150, 120))  # a box (still the tool)
+        self.type_note(QPoint(30, 30), "never mind")
+        QTest.keyClick(self.window, Qt.Key.Key_Escape)
+        self.assertEqual(self.notes(), [])
+        self.assertEqual(len(self.window.shapes), 1)  # the box stays
+        self.assertEqual(closed, [])
+        QTest.keyClick(self.window, Qt.Key.Key_Escape)  # a second Esc closes the window
+        self.assertEqual(closed, [True])
+        self.assertEqual(self.results, [])
+
+    def test_empty_note_is_dropped(self):
+        self.type_note(QPoint(30, 30), "   ")
+        QTest.keyClick(self.window, Qt.Key.Key_Return)
+        self.assertEqual(self.notes(), [])
+
+    def test_done_keeps_the_note_being_typed(self):
+        self.type_note(QPoint(30, 30), "half")
+        self.window.finish()  # the ✓ done button
+        self.assertEqual(self.notes(), ["half"])
+        self.assertEqual(self.results[0].pixelColor(32, 32), QColor("white"))
+
     def test_preview_label_after_done(self):
         preview = Preview(picture(), can_save=True, save_folder="demo")
         preview.show_drawn(picture())
