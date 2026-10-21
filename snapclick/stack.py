@@ -39,13 +39,17 @@ GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x20
 WM_MOUSEWHEEL = 0x020A
 INPUT_MOUSE = 0
-MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_MOVE, MOUSEEVENTF_WHEEL, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_ABSOLUTE = 0x1, 0x0800, 0x4000, 0x8000
+SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 76, 77, 78, 79
+WHEEL_DELTA = 120  # one wheel notch
 DWMWA_CLOAKED = 14
 CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT = 0x1, 0x4
 GA_ROOT = 2
 WM_HOTKEY = 0x0312
 VK_ESCAPE = 0x1B
 ESC_HOTKEY_ID = 2  # 1 is PrtSc
+VK_DOWN = 0x28
+KEY_WHEEL_HOTKEY_ID = 3
 
 user32 = ctypes.windll.user32
 dwmapi = ctypes.windll.dwmapi
@@ -77,6 +81,8 @@ DEBUG_DIR = os.environ.get("SNAPCLICK_DEBUG_DIR")  # development only (spec §6)
 DEBUG_MAX_READS = 400  # PNGs per stack, so a long test can't fill the disk
 # Development only: leave the foreground window as it is (touchpad test in browsers)
 DEBUG_NO_FOREGROUND = os.environ.get("SNAPCLICK_DEBUG_NO_FOREGROUND") == "1"
+# Development only: the Down arrow sends one wheel notch to piece 1's window (browser test)
+DEBUG_KEY_WHEEL = os.environ.get("SNAPCLICK_DEBUG_KEY_WHEEL") == "1"
 # Raw input messages the overlay gets, logged in debug (touchpads may not send wheels)
 DEBUG_MESSAGES = {
     0x020A: "WM_MOUSEWHEEL", 0x020E: "WM_MOUSEHWHEEL",
@@ -199,6 +205,27 @@ def wheel_input(delta):
     return INPUT(INPUT_MOUSE, MOUSEINPUT(0, 0, delta & 0xFFFFFFFF, MOUSEEVENTF_WHEEL, 0, OWN_WHEEL))
 
 
+def move_input(x, y, virtual):
+    """A mouse move to screen pixel (x, y) for SendInput. `virtual` = (left, top,
+    width, height) of all monitors together; Windows wants 0..65535 across it."""
+    left, top, width, height = virtual
+    flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+    return INPUT(INPUT_MOUSE, MOUSEINPUT((x - left) * 65535 // (width - 1), (y - top) * 65535 // (height - 1), 0,
+                                         flags, 0, OWN_WHEEL))
+
+
+def send_wheel_at(point, delta):
+    """Move the mouse to `point`, turn the wheel, move it back, in one go (so the
+    wheel lands at `point`)."""
+    virtual = tuple(user32.GetSystemMetrics(i) for i in (SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+                                                          SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN))
+    back = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(back))
+    inputs = (INPUT * 3)(move_input(point.x, point.y, virtual), wheel_input(delta),
+                         move_input(back.x, back.y, virtual))
+    user32.SendInput(3, inputs, ctypes.sizeof(INPUT))
+
+
 def set_click_through(hwnd, on):
     """Let the mouse pass through a window (it is layered, so this works for input)."""
     style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
@@ -234,19 +261,20 @@ def client_rows(hwnd):
     return corner.y, corner.y + rect.bottom - 1
 
 
-class EscapeKey(QAbstractNativeEventFilter):
-    """Esc ends the stack while another app has the keyboard (see Stack)."""
+class HotKey(QAbstractNativeEventFilter):
+    """A key that works while another app has the keyboard, e.g. Esc ends the stack (see Stack)."""
 
-    def __init__(self, on_press):
+    def __init__(self, vk, hotkey_id, on_press):
         super().__init__()
+        self.hotkey_id = hotkey_id
         self.on_press = on_press
         QCoreApplication.instance().installNativeEventFilter(self)
-        self.registered = bool(user32.RegisterHotKey(None, ESC_HOTKEY_ID, 0, VK_ESCAPE))
+        self.registered = bool(user32.RegisterHotKey(None, hotkey_id, 0, vk))
 
     def nativeEventFilter(self, event_type, message):
         if event_type == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(int(message))
-            if msg.message == WM_HOTKEY and msg.wParam == ESC_HOTKEY_ID:
+            if msg.message == WM_HOTKEY and msg.wParam == self.hotkey_id:
                 QTimer.singleShot(0, self.on_press)
                 return True, 0
         return False, 0
@@ -254,7 +282,7 @@ class EscapeKey(QAbstractNativeEventFilter):
     def close(self):
         QCoreApplication.instance().removeNativeEventFilter(self)
         if self.registered:
-            user32.UnregisterHotKey(None, ESC_HOTKEY_ID)
+            user32.UnregisterHotKey(None, self.hotkey_id)
             self.registered = False
 
 
@@ -297,7 +325,8 @@ class Stack(QObject):
             top = max(min(top, frame.top()), monitor.top())
             bottom = min(max(bottom, frame.bottom()), monitor.bottom())
             self.view = QRect(frame.left(), top, frame.width(), bottom - top + 1)
-        self.escape = EscapeKey(self.finish)
+        self.escape = HotKey(VK_ESCAPE, ESC_HOTKEY_ID, self.finish)
+        self.key_wheel = HotKey(VK_DOWN, KEY_WHEEL_HOTKEY_ID, self.wheel_from_key) if DEBUG_KEY_WHEEL else None
         self.through_timer = QTimer(self)  # ends the click-through moment (pass_wheel)
         self.through_timer.setSingleShot(True)
         self.through_timer.timeout.connect(lambda: self.set_click_through(False))
@@ -317,7 +346,7 @@ class Stack(QObject):
             self.debug.log(f"start  frame={frame.getRect()}  view={self.view.getRect()}  "
                            f"window={class_name(window) if target else '-'}  "
                            f"target={class_name(target) if target else '-'}  excluded={self.excluded}  "
-                           f"no_foreground={DEBUG_NO_FOREGROUND}")
+                           f"no_foreground={DEBUG_NO_FOREGROUND}  key_wheel={DEBUG_KEY_WHEEL}")
 
         self.lock = threading.Lock()  # guards self.long and self.live
         self.shown = None  # the matcher state the overlay shows
@@ -444,6 +473,17 @@ class Stack(QObject):
         self.set_click_through(True)
         self.through_timer.start(CLICK_THROUGH_MS)
 
+    def wheel_from_key(self):
+        """Debug only (Down arrow): one wheel notch down at the middle of piece 1."""
+        if not self.running:
+            return
+        center = self.frame.center()
+        point = wintypes.POINT(center.x(), center.y())
+        target = window_below(int(self.overlays[0].winId()), point)
+        self.click_through()
+        send_wheel_at(point, -WHEEL_DELTA)
+        self.debug.log(f"wheel  angle={-WHEEL_DELTA}  how=key  target={class_name(target) if target else '-'}")
+
     def set_click_through(self, on):
         for overlay in self.overlays:
             set_click_through(int(overlay.winId()), on)
@@ -464,6 +504,8 @@ class Stack(QObject):
         else:
             self.reader.join()
         self.escape.close()
+        if self.key_wheel:
+            self.key_wheel.close()
         for overlay in self.overlays:
             overlay.close()
         self.overlays = []
