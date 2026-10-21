@@ -34,7 +34,7 @@ For things taller than the screen, like long terminal output. Snapclick joins se
 
 1. Take a normal capture of the first part (the preview must be on).
 2. Click **Add below** on the preview. The screen stays live.
-3. Scroll with the mouse wheel, then **click** where the next piece should end. Lines that scrolled past are included too.
+3. Scroll with the mouse wheel or touchpad (in browsers like Brave or Chrome, press **↓** instead), then **click** where the next piece should end. Lines that scrolled past are included too.
 4. Repeat, then finish with **✓** on the preview, **Esc** or **right-click**.
 
 After every piece, the clipboard holds the whole joined image. **Retake** removes the last piece. With auto-save on, only the final image is saved.
@@ -83,6 +83,7 @@ For the long captures (stack) the spec said: **spike first**. A small test tool 
 - **Matching by column blocks, then whole rows** — 8 blocks per pixel row find the scroll position even with a scrollbar in the frame; requiring whole rows to match stops look-alike lines (logs that differ only in a number) from matching at the wrong place.
 - **Ignore what does not scroll** — title bar, padding and a strip of the window behind are found on the first scroll and left out.
 - **No keyboard or mouse hooks** — the wheel is passed on with a normal window message, and Esc while stacking is a hotkey, like PrtSc.
+- **↓ for browsers** — in Brave, touchpad scrolling never reached the overlay, and the browser ignored a passed-on wheel message. So ↓ (a hotkey while stacking) sends one real wheel notch at the first piece, while the overlay lets the mouse through for that moment.
 - **Tested end to end** — scripts drove real terminals (classic console and Windows Terminal) with real wheel input, then checked the joined image line by line: every line exactly once.
 
 ### Build from source
