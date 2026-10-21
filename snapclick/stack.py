@@ -81,8 +81,6 @@ DEBUG_DIR = os.environ.get("SNAPCLICK_DEBUG_DIR")  # development only (spec §6)
 DEBUG_MAX_READS = 400  # PNGs per stack, so a long test can't fill the disk
 # Development only: leave the foreground window as it is (touchpad test in browsers)
 DEBUG_NO_FOREGROUND = os.environ.get("SNAPCLICK_DEBUG_NO_FOREGROUND") == "1"
-# Development only: the Down arrow sends one wheel notch to piece 1's window (browser test)
-DEBUG_KEY_WHEEL = os.environ.get("SNAPCLICK_DEBUG_KEY_WHEEL") == "1"
 # Raw input messages the overlay gets, logged in debug (touchpads may not send wheels)
 DEBUG_MESSAGES = {
     0x020A: "WM_MOUSEWHEEL", 0x020E: "WM_MOUSEHWHEEL",
@@ -326,7 +324,8 @@ class Stack(QObject):
             bottom = min(max(bottom, frame.bottom()), monitor.bottom())
             self.view = QRect(frame.left(), top, frame.width(), bottom - top + 1)
         self.escape = HotKey(VK_ESCAPE, ESC_HOTKEY_ID, self.finish)
-        self.key_wheel = HotKey(VK_DOWN, KEY_WHEEL_HOTKEY_ID, self.wheel_from_key) if DEBUG_KEY_WHEEL else None
+        # Down arrow = one wheel notch: browsers' touchpad scroll never reaches the overlay.
+        self.down_key = HotKey(VK_DOWN, KEY_WHEEL_HOTKEY_ID, self.wheel_from_key)
         self.through_timer = QTimer(self)  # ends the click-through moment (pass_wheel)
         self.through_timer.setSingleShot(True)
         self.through_timer.timeout.connect(lambda: self.set_click_through(False))
@@ -346,7 +345,7 @@ class Stack(QObject):
             self.debug.log(f"start  frame={frame.getRect()}  view={self.view.getRect()}  "
                            f"window={class_name(window) if target else '-'}  "
                            f"target={class_name(target) if target else '-'}  excluded={self.excluded}  "
-                           f"no_foreground={DEBUG_NO_FOREGROUND}  key_wheel={DEBUG_KEY_WHEEL}")
+                           f"no_foreground={DEBUG_NO_FOREGROUND}")
 
         self.lock = threading.Lock()  # guards self.long and self.live
         self.shown = None  # the matcher state the overlay shows
@@ -474,7 +473,7 @@ class Stack(QObject):
         self.through_timer.start(CLICK_THROUGH_MS)
 
     def wheel_from_key(self):
-        """Debug only (Down arrow): one wheel notch down at the middle of piece 1."""
+        """Down arrow: one wheel notch down at the middle of piece 1."""
         if not self.running:
             return
         center = self.frame.center()
@@ -504,8 +503,7 @@ class Stack(QObject):
         else:
             self.reader.join()
         self.escape.close()
-        if self.key_wheel:
-            self.key_wheel.close()
+        self.down_key.close()
         for overlay in self.overlays:
             overlay.close()
         self.overlays = []
@@ -648,7 +646,7 @@ class StackOverlay(QWidget):
             if long.lost:
                 hint = "[wheel] scroll back   [esc] done"
             else:
-                hint = f"[wheel] scroll   [click] end of piece {stack.count() + 1}   [esc] done"
+                hint = f"[wheel] [↓] scroll   [click] end of piece {stack.count() + 1}   [esc] done"
             margin = round(16 * s)
             draw_label(p, hint, font, area.left() + margin, area.top() + margin, HINT_TEXT, HINT_BG, area, s,
                        HINT_BORDER)
