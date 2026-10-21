@@ -1,6 +1,9 @@
 """Tests for the Draw window and button (spec §2c). Run: .venv\\Scripts\\python -m unittest discover tests"""
 import os
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # no windows on screen
 
@@ -11,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QScrollArea
 
 from snapclick.draw import BLUR_BLOCK, COLORS, DrawWindow, draw_title
 from snapclick.preview import Preview
+from snapclick.tray import Tray, write_image
 
 app = QApplication.instance() or QApplication([])
 
@@ -253,6 +257,84 @@ class DrawingTest(unittest.TestCase):
         preview.show_drawn(picture())
         self.assertEqual(preview.label()[0], "copied · with drawings")
         preview.close()
+
+
+class DrawAgainAndSaveTest(unittest.TestCase):
+    """✓ done overwrites a saved file; Draw again keeps the drawings editable (build step 7)."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()  # never the real save folder
+        self.base = picture()
+        self.copied = []
+        self.preview = Preview(self.base, can_save=True, save_folder=self.folder.name)
+        # Just what Tray's draw methods use, without a real tray icon or clipboard.
+        self.tray = SimpleNamespace(preview=self.preview, draw_window=None, undo={"saved_path": None},
+                                    copy=self.copied.append, showMessage=lambda *args: None,
+                                    _drawn=None, _draw_closed=lambda: None)
+        self.tray._drawn = lambda image: Tray._drawn(self.tray, image)
+
+    def tearDown(self):
+        self.preview.close()
+        self.folder.cleanup()
+
+    def draw_box(self, start, end):
+        Tray.open_draw(self.tray)
+        window = self.tray.draw_window
+        window.canvas.ratio = 1
+        canvas = window.canvas
+        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+        QTest.mouseMove(canvas, end)
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+        return window
+
+    def test_done_overwrites_the_saved_file(self):
+        path = Path(self.folder.name) / "2026-10-21_18-00-00.png"
+        self.assertTrue(write_image(path, self.base))
+        self.tray.undo["saved_path"] = path
+        self.draw_box(QPoint(50, 40), QPoint(150, 120)).finish()
+        self.assertEqual(list(Path(self.folder.name).iterdir()), [path])  # same file, no new one
+        self.assertEqual(QImage(str(path)).pixelColor(50, 80), QColor(COLORS["red"]))
+        self.assertEqual(self.preview.label()[0], "copied · with drawings")
+
+    def test_draw_again_keeps_the_drawings_editable(self):
+        self.draw_box(QPoint(50, 40), QPoint(150, 120)).finish()
+        again = self.draw_box(QPoint(10, 10), QPoint(40, 30))
+        self.assertIs(again.image, self.base)  # the picture without drawings, not the flat one
+        self.assertEqual(len(again.shapes), 2)
+        again.undo()
+        again.undo()  # the first box is undone too
+        again.finish()
+        self.assertEqual(self.copied[-1].pixelColor(50, 80), QColor("#336699"))
+
+    def test_esc_on_draw_again_keeps_the_old_drawings(self):
+        self.draw_box(QPoint(50, 40), QPoint(150, 120)).finish()
+        again = self.draw_box(QPoint(10, 10), QPoint(40, 30))
+        again.undo()
+        again.undo()
+        press(again, Qt.Key.Key_Escape)
+        self.assertEqual(len(self.tray.undo["shapes"]), 1)  # as after the first ✓
+        self.assertEqual(len(self.copied), 1)
+
+    def test_label_newest_news_wins(self):
+        self.preview.show_drawn(self.base)
+        self.preview.set_hover("save")
+        self.assertEqual(self.preview.label()[0], self.folder.name)  # hover still shows the folder
+        self.preview.set_hover(None)
+        self.preview.show_saved(Path(self.folder.name) / "shot.png")
+        self.assertEqual(self.preview.label()[0], "saved ✓ ")
+        self.preview.show_drawn(self.base)  # draw again after Save
+        self.assertEqual(self.preview.label()[0], "copied · with drawings")
+
+    def test_stack_after_drawing_starts_fresh(self):
+        self.draw_box(QPoint(50, 40), QPoint(150, 120)).finish()
+        self.preview.start_stack()
+        self.preview.finish_stack(picture(300, 600), 2, None)
+        self.assertEqual(self.preview.label()[0], "copied · 2 pieces · 300×600")
+
+    def test_write_jpg(self):
+        path = Path(self.folder.name) / "shot.jpg"
+        self.assertTrue(write_image(path, self.base))
+        self.assertEqual(QImage(str(path)).size(), self.base.size())
 
 
 if __name__ == "__main__":

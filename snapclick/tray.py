@@ -19,6 +19,16 @@ LIGHT_TASKBAR_COLOR = "#7A4E00"
 ICON_SIZES = (16, 20, 24, 32)
 
 
+def write_image(path, image):
+    """Write a PNG or JPG (from the file name). Returns True if it worked."""
+    try:
+        if Path(path).suffix.lower() in (".jpg", ".jpeg"):
+            return image.save(str(path), "JPG", 90)
+        return image.save(str(path), "PNG")
+    except OSError:
+        return False
+
+
 def taskbar_is_light():
     """Windows stores the taskbar theme in the registry (1 = light)."""
     try:
@@ -181,14 +191,24 @@ class Tray(QSystemTrayIcon):
             return
         p = self.preview
         p.hold(True)
-        self.draw_window = DrawWindow(p.image, draw_title(p.mode, p.count, p.image), p.home)
+        # Draw again: the picture without drawings, and the drawings, still editable.
+        base = self.undo.get("draw_base", p.image)
+        self.draw_window = DrawWindow(base, draw_title(p.mode, p.count, base), p.home,
+                                      self.undo.get("shapes", []))
         self.draw_window.done.connect(self._drawn)
         self.draw_window.closed.connect(self._draw_closed)
 
     def _drawn(self, image):
-        """✓ done: the clipboard and the thumbnail get the picture with drawings."""
+        """✓ done: the clipboard, the thumbnail and a file already saved for this
+        capture get the picture with drawings."""
+        self.undo["draw_base"] = self.draw_window.image
+        self.undo["shapes"] = list(self.draw_window.shapes)
         self.copy(image)
         self.preview.show_drawn(image)
+        path = self.undo["saved_path"]
+        if path and not write_image(path, image):
+            self.showMessage("Snapclick", f"Could not save the drawings to {path.name}.\n"
+                             "The picture with drawings is in your clipboard.", QSystemTrayIcon.MessageIcon.Warning)
 
     def _draw_closed(self):
         self.draw_window = None
@@ -205,6 +225,9 @@ class Tray(QSystemTrayIcon):
         if undo["saved_path"]:  # auto-save keeps only the final joined image
             self.delete_file(undo["saved_path"])
             undo["saved_path"] = None
+        # Drawings on piece 1 stay in its picture; Draw after the stack starts on the joined image.
+        undo.pop("draw_base", None)
+        undo.pop("shapes", None)
         self.preview.start_stack()
         self.stack = Stack(undo["frame"], self.preview.image, [self.preview])
         self.stack.changed.connect(self._stack_changed)
@@ -271,10 +294,7 @@ class Tray(QSystemTrayIcon):
             folder = Path(prefs["save_folder"])
             folder.mkdir(parents=True, exist_ok=True)
             path = settings.new_file_path(folder, prefs["format"])
-            if prefs["format"] == "jpg":
-                ok = image.save(str(path), "JPG", 90)
-            else:
-                ok = image.save(str(path), "PNG")
+            ok = write_image(path, image)
         except OSError:
             ok = False
         if not ok:

@@ -233,8 +233,9 @@ class DrawWindow(QWidget):
     done = Signal(object)  # the picture (QImage), from ✓ done or Enter
     closed = Signal()  # closed by ✓ done, Enter or Esc
 
-    def __init__(self, image, title, home):
-        """`home`: a point on the monitor to open on (the preview's)."""
+    def __init__(self, image, title, home, shapes=()):
+        """`image`: the picture without drawings. `home`: a point on the monitor to
+        open on (the preview's). `shapes`: drawings from an earlier ✓ done, still editable."""
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.Tool)
         self.setObjectName("draw")
@@ -242,7 +243,7 @@ class DrawWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setStyleSheet(STYLE)
         self.image = image
-        self.shapes = []  # drawings, oldest first: (kind, color, start, end) in picture pixels
+        self.shapes = list(shapes)  # drawings, oldest first: (kind, color, start, end) in picture pixels
         screen = QGuiApplication.screenAt(home) or QGuiApplication.primaryScreen()
 
         header = QWidget(objectName="header")

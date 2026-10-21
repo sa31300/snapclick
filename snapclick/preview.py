@@ -103,7 +103,7 @@ class Preview(QWidget):
         self.mode = "single"  # "single", "stacking" or "stacked"
         self.count = 1  # stack pieces
         self.held = False  # stays open while the draw window is open
-        self.drawn = False  # the image has drawings (§2c)
+        self.drawn = False  # the label says "with drawings" (§2c), until a later Save
         self.home = QCursor.pos()  # the preview shows on this point's monitor
 
         self.label_font = QFont("JetBrains Mono")
@@ -178,6 +178,7 @@ class Preview(QWidget):
     # --- results from the tray -------------------------------------------
 
     def show_saved(self, path):
+        self.drawn = False  # the newest news is the saved file
         self.save_state = "saved"
         self.saved_path = path
         self.flash.start()
@@ -206,6 +207,7 @@ class Preview(QWidget):
         """Stay open, show Finish and Retake, never appear in screen reads."""
         self.mode = "stacking"
         self.saved_path = None
+        self.drawn = False  # after the stack, the label counts pieces (§2b)
         self.timer.stop()
         exclude_from_capture(self)
         self.place()
@@ -297,11 +299,11 @@ class Preview(QWidget):
             return "add below · start a stack", None, TEXT
         if self.hover == "draw":
             return "draw · mark up", None, VIOLET
-        if self.save_state == "saved":
+        if self.save_state == "saved" and not self.drawn:
             return "saved ✓ ", self.saved_path.name, GREEN
         if self.save_state == "failed":
             return "save failed", None, MUTED
-        if self.hover == "save":
+        if self.hover == "save" and self.save_state != "saved":
             return self.save_folder, None, BLUE
         if self.drawn:
             return "copied · with drawings", None, GREEN
