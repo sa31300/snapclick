@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # no windows on screen
 from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 from snapclick.draw import BLUR_BLOCK, COLORS, DrawWindow, draw_title
 from snapclick.preview import Preview
@@ -232,6 +232,21 @@ class DrawingTest(unittest.TestCase):
         self.drag(QPoint(20, 20), QPoint(120, 100))
         self.window.finish()
         self.assertNotEqual(self.results[0].pixelColor(40, 60), QColor(COLORS["red"]))
+
+    def test_tall_stack_picture_scrolls_and_keeps_its_size(self):
+        tall = picture(300, 4000)  # a joined stack, much taller than the screen
+        self.window = DrawWindow(tall, draw_title("stacked", 3, tall), QPoint(0, 0))
+        self.window.canvas.ratio = 1
+        self.window.done.connect(self.results.append)
+        scroll = self.window.findChild(QScrollArea)
+        self.assertGreater(scroll.verticalScrollBar().maximum(), 0)  # scroll inside the window
+        self.assertLess(self.window.height(), 4000)
+        scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
+        self.drag(QPoint(40, 3900), QPoint(200, 3960))  # a box near the bottom
+        self.window.finish()
+        image = self.results[0]
+        self.assertEqual(image.size(), tall.size())  # the full tall picture
+        self.assertEqual(image.pixelColor(40, 3930), QColor(COLORS["red"]))
 
     def test_preview_label_after_done(self):
         preview = Preview(picture(), can_save=True, save_folder="demo")
