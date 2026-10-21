@@ -74,6 +74,7 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 ## Known issues
 
 - **Scrolling up fast can shift the stripes** in a long capture. In some windows (for example Claude Code), a fast swipe up can put the striped part a few lines off the captured text. Scroll a little down and back up: the stripes go back on the right lines.
+- **Draw doesn't scroll while you drag.** To mark something bigger than the draw window, scroll first, then draw.
 - **Rare: lost lines after a half-drawn first scroll.** In apps that redraw their whole screen line by line, if the very first scroll of a long capture catches the screen half drawn, a few lines can be left out of the image. Check long captures from such apps before you share them.
 
 ## How I built this

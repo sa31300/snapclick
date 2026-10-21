@@ -148,28 +148,19 @@ Example: piece 1 shows lines 1–28. The user scrolls 40 lines and clicks at the
 - The undo-copy rule (§2) covers the whole stack: Retake back to piece 1 restores the clipboard from before piece 1.
 - Auto-save on: save **only the final joined image**, once, when the stack is finished. No files for single pieces.
 
-### Status (2026-10-16)
+### Status (2026-10-21)
 
-Built (commits up to `README: long captures (stack), with demo GIF`): spike, matcher + unit tests, stack overlay, preview / clipboard / auto-save, README.
-A code review against the reference animation found **no missing behavior**: stripes follow the text, the end line and `already captured ↑`, the `↑ + N px above` tag, the next-piece box with full height, lost/found, Retake of the last piece.
-
-**Not done:** the owner has **not tested or accepted** the stack yet. Steps 3–5 were done without stopping for the owner's OK. Treat the stack as **unaccepted**.
+Built and released: the stack shipped in **v1.3.0**; v1.4 parts A and B (reads and stripes use the whole view; a click anywhere in the view ends the piece, no next-piece box) and matcher fixes followed. **v1.4.0** added the **↓** key (4b) after the owner found that touchpad scrolling never reaches the overlay in browsers (Brave).
+Owner tests on their PC: §8 item "stripes stay when scrolling back up" accepted with the known flaw below (2026-10-16); stack in Brave with ↓ and in a terminal with the touchpad (2026-10-21).
 
 ### Still open (known issues, 2026-10-16)
 
 - **Scrolling up fast can shift the stripes.** In some windows (seen in Claude Code), a fast swipe up can put the stripes a few lines off the captured text. A small scroll down and back up puts them back on the right lines.
 - **Rare: lost lines after a half-drawn first scroll.** In apps that redraw their whole screen line by line, if the very first scroll of a stack is read while the screen is half drawn, some text lines can be taken for a fixed bar and left out of the image.
 
-### Next steps (for the AI) — one at a time, stop after each
+### Next steps (for the AI)
 
-1. ~~Test-only settings (§6)~~ — done. ~~No top/bottom guide lines~~ — done (`Stack: no top or bottom guide lines, as in the reference GIF`).
-2. **v1.4, part A — reads and stripes use the view**: read the whole view, not only piece 1's rows; draw the stripes on every captured row in the view. Add matcher unit tests: piece 1 in the middle of a taller view, scroll so captured lines pass piece 1's old top and bottom. Stop; tell the owner how to see it in a test run.
-3. **v1.4, part B — clicks and next piece**: a click anywhere in the view ends the piece at the click; remove the dashed next-piece box, keep the size badge by the mouse. Stop; tell the owner how to see it.
-4. **Owner test:** give the owner the test steps for §8's Stack items, one item at a time, using a test run. Wait for their result.
-5. **Fix only what fails.** One fix per step, with a unit test if it is matcher logic. Then ask the owner to retest that item.
-6. When every Stack item in §8 passes on the owner's PC: ask before building a release.
-
-**No release** (no new `.exe` on GitHub Releases, no version tag, no push of release files) until the owner has tested the stack on their own PC and said yes.
+All build steps are done. Open: the owner confirms the §8 Stack items that are not ticked yet. Fix only what fails, one fix per step, then ask the owner to retest.
 
 ## 2c. Draw — annotations
 
@@ -232,7 +223,9 @@ Needs **Show preview after capture** on: the Draw button lives on the preview. N
 
 ### Status (2026-10-21)
 
-Steps 1–7 built and **tested by the owner on their PC**. Step 8 (README + `docs/draw.gif`) done on the owner's go-ahead.
+Steps 1–7 built and **tested by the owner on their PC**. Step 8 (README + `docs/draw.gif`) done on the owner's go-ahead. **Released in v1.5.0**; the owner tested the release `.exe`.
+
+Known limit: while drawing, dragging past the window's edge does not scroll the window (scroll first, then draw). Not in this spec; in the release notes.
 
 ### Build steps (for the AI) — one at a time, stop after each
 
@@ -317,6 +310,8 @@ Automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking
 
 ## 8. Done when
 
+*Ticked = the owner confirmed it on their PC (date in brackets), or it can be checked in the repo. Not ticked = not confirmed in writing yet; ask the owner.*
+
 - [ ] PrtSc → two clicks → paste into Paint/Word works.
 - [ ] Works in any click direction.
 - [ ] Esc and right-click cancel.
@@ -325,9 +320,9 @@ Automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking
 - [ ] Settings survive a restart.
 - [ ] Tray icon readable on dark and light taskbar.
 - [ ] `.exe` runs on a PC without Python.
-- [ ] README has a GIF of the flow.
+- [x] README has a GIF of the flow.
 - [ ] Stack: piece 1, scroll 3 screens with the wheel, click → one image with every line exactly once (Windows Terminal and classic console).
-- [ ] Stack: the stripes stay on the captured text when scrolling back up.
+- [x] Stack: the stripes stay on the captured text when scrolling back up. *(2026-10-16, with the known flaw in §2b)*
 - [ ] Stack: piece 1 in the middle of the window, scroll → the stripes move line by line past piece 1's old top and bottom; captured text never looks uncaptured.
 - [ ] Stack: click near the bottom of the window, below piece 1's old bottom → the piece ends exactly at the click.
 - [ ] Stack: no horizontal dashed line at any time (no frame top/bottom, no next-piece box).
@@ -336,7 +331,8 @@ Automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking
 - [ ] Stack: works when piece 1 includes the scrollbar or the title bar.
 - [ ] Stack: a scrollbar jump shows the red tag; scrolling back recovers.
 - [ ] Stack: auto-save writes one file per stack, not one per piece.
-- [ ] Draw: single shot → Draw → box, arrow, mark, text, blur, steps → ✓ → paste shows every drawing.
-- [ ] Draw: after a 3-piece stack, scroll inside the draw window, draw at the bottom → ✓ → paste shows the full tall picture with it.
-- [ ] Draw: Esc → nothing changes. Not clicking Draw → same as today.
-- [ ] Draw: Save after ✓ writes the picture with drawings.
+- [x] Stack: in a browser (Brave), ↓ scrolls the page and the stripes follow; in a terminal the touchpad still works. *(2026-10-21)*
+- [x] Draw: single shot → Draw → box, arrow, mark, text, blur, steps → ✓ → paste shows every drawing. *(2026-10-21)*
+- [x] Draw: after a 3-piece stack, scroll inside the draw window, draw at the bottom → ✓ → paste shows the full tall picture with it. *(2026-10-21)*
+- [x] Draw: Esc → nothing changes. Not clicking Draw → same as today. *(2026-10-21)*
+- [x] Draw: Save after ✓ writes the picture with drawings. *(2026-10-21)*
