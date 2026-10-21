@@ -132,6 +132,32 @@ class DrawingTest(unittest.TestCase):
         self.window.finish()
         self.assertEqual(self.results[0].pixelColor(50, 80), QColor("#336699"))
 
+    def click(self, point):
+        canvas = self.window.canvas
+        QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+
+    def test_mark_is_yellow_whatever_the_color(self):
+        self.pick(self.window.tools, "mark")
+        self.pick(self.window.colors, "blue")
+        self.drag(QPoint(20, 20), QPoint(120, 60))
+        self.window.finish()
+        inside, outside = self.results[0].pixelColor(70, 40), self.results[0].pixelColor(200, 150)
+        self.assertEqual(outside, QColor("#336699"))
+        self.assertGreater(inside.red(), 120)  # #336699 under see-through yellow (red was 51)
+        self.assertGreater(inside.green(), inside.blue())
+
+    def test_steps_count_up_and_undo_takes_the_number_back(self):
+        self.pick(self.window.tools, "step")
+        for x in (40, 100, 160):
+            self.click(QPoint(x, 100))
+        self.window.undo()  # removes step 3
+        self.click(QPoint(220, 100))  # this one is 3 again
+        steps = [shape for shape in self.window.shapes if shape[0] == "step"]
+        self.assertEqual([shape[2].x() for shape in steps], [40, 100, 220])
+        self.window.finish()
+        self.assertEqual(self.results[0].pixelColor(220 - 11, 100), QColor(COLORS["red"]))  # the circle
+        self.assertEqual(self.results[0].pixelColor(160 - 11, 100), QColor("#336699"))  # undone
+
     def test_preview_label_after_done(self):
         preview = Preview(picture(), can_save=True, save_folder="demo")
         preview.show_drawn(picture())

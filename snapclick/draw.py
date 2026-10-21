@@ -7,7 +7,7 @@ top; ✓ done or Enter gives the picture back with them; Esc closes with no chan
 import math
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
@@ -25,6 +25,8 @@ SCREEN_PART = 0.9  # the window is at most 90% of the monitor
 LINE = 3  # px in the picture, for boxes and arrows
 HEAD_LENGTH, HEAD_WIDTH = 16, 12  # arrow head, px in the picture
 MIN_DRAG = 4  # px; a shorter drag is a stray click, not a drawing
+MARK = QColor(255, 214, 0, 110)  # see-through yellow highlight, whatever color is picked
+STEP_SIZE = 26  # px in the picture: the numbered circle
 
 STYLE = f"""
 QWidget#draw {{ background: {BG}; border: 1px solid {BORDER}; }}
@@ -54,11 +56,28 @@ def draw_title(mode, count, image):
 
 
 def paint_shapes(p, shapes):
-    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end)."""
+    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end).
+    Steps are numbered 1, 2, 3... in the order they were placed."""
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    number = 0
     for kind, color, start, end in shapes:
         color = QColor(color)
-        if kind == "box":
+        if kind == "mark":
+            p.fillRect(QRectF(start, end).normalized(), MARK)
+        elif kind == "step":
+            number += 1
+            circle = QRectF(0, 0, STEP_SIZE, STEP_SIZE)
+            circle.moveCenter(start)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(circle)
+            font = QFont("IBM Plex Sans")
+            font.setPixelSize(round(STEP_SIZE * 0.6))
+            font.setBold(True)
+            p.setFont(font)
+            p.setPen(QColor("white"))
+            p.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(number))
+        elif kind == "box":
             p.setPen(QPen(color, LINE, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap, Qt.PenJoinStyle.MiterJoin))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(QRectF(start, end).normalized())
@@ -85,7 +104,7 @@ def render(image, shapes):
 
 class Canvas(QWidget):
     """The picture at 100% (one image pixel = one screen pixel) and its drawings.
-    Drag with box or arrow to add one."""
+    Drag with box, arrow or mark to add one; click with step."""
 
     def __init__(self, owner, image, ratio):
         super().__init__()
@@ -103,9 +122,14 @@ class Canvas(QWidget):
 
     def mousePressEvent(self, event):
         tool = self.owner.tool()
-        if event.button() == Qt.MouseButton.LeftButton and tool in ("box", "arrow"):
-            point = self.to_picture(event.position())
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        point = self.to_picture(event.position())
+        if tool in ("box", "arrow", "mark"):
             self.drag = (tool, self.owner.color(), point, point)
+        elif tool == "step":
+            self.owner.shapes.append(("step", self.owner.color(), point, point))
+            self.update()
 
     def mouseMoveEvent(self, event):
         if self.drag:
