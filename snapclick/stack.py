@@ -31,11 +31,15 @@ LIVE_MARGIN = 160  # px around the mouse read with the frame, for the magnifier
 LOST = QColor("#FF6B6B")
 STRIPES = QColor(255, 176, 0, round(255 * 0.4))
 SEE_THROUGH = QColor(0, 0, 0, 1)  # invisible, but the overlay still gets the mouse
+CLICK_THROUGH_MS = 150  # how long the overlay lets the mouse through after a sent wheel
+OWN_WHEEL = 0x534E4150  # extra info on the wheels Snapclick sends, to know them if they come back
 
 GW_HWNDNEXT = 2
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x20
 WM_MOUSEWHEEL = 0x020A
+INPUT_MOUSE = 0
+MOUSEEVENTF_WHEEL = 0x0800
 DWMWA_CLOAKED = 14
 CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT = 0x1, 0x4
 GA_ROOT = 2
@@ -58,6 +62,9 @@ user32.ChildWindowFromPointEx.argtypes = [wintypes.HWND, wintypes.POINT, wintype
 user32.ChildWindowFromPointEx.restype = wintypes.HWND
 user32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+user32.GetMessageExtraInfo.restype = wintypes.LPARAM
 user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetAncestor.restype = wintypes.HWND
@@ -173,16 +180,49 @@ def window_below(overlay_hwnd, point):
     return hwnd
 
 
-def pass_wheel(overlay_hwnd, delta):
-    """Send a wheel turn to the window under the mouse, below the overlay."""
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
+                ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", wintypes.DWORD), ("mi", MOUSEINPUT)]  # mouse is the largest input kind
+
+
+def needs_real_wheel(root_class):
+    """Chromium windows (Brave, Chrome, Edge) ignore a posted WM_MOUSEWHEEL."""
+    return root_class.startswith("Chrome_WidgetWin")
+
+
+def wheel_input(delta):
+    """A wheel turn for SendInput, marked as Snapclick's own."""
+    return INPUT(INPUT_MOUSE, MOUSEINPUT(0, 0, delta & 0xFFFFFFFF, MOUSEEVENTF_WHEEL, 0, OWN_WHEEL))
+
+
+def set_click_through(hwnd, on):
+    """Let the mouse pass through a window (it is layered, so this works for input)."""
+    style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+    user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT if on else style & ~WS_EX_TRANSPARENT)
+
+
+def pass_wheel(stack, overlay_hwnd, delta):
+    """Pass a wheel turn to the window under the mouse, below the overlay.
+    Most windows take a posted message. Chromium needs a real wheel: the overlays
+    let the mouse through for a moment, and the wheel goes in at the mouse."""
     point = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(point))
     target = window_below(overlay_hwnd, point)
-    if target:
-        wparam = (delta & 0xFFFF) << 16  # no keys held
-        lparam = ((point.y & 0xFFFF) << 16) | (point.x & 0xFFFF)
-        user32.PostMessageW(target, WM_MOUSEWHEEL, wparam, lparam)
-    return target
+    if not target:
+        return None, "-"
+    if needs_real_wheel(class_name(user32.GetAncestor(target, GA_ROOT))):
+        stack.click_through()
+        wheel = wheel_input(delta)
+        user32.SendInput(1, ctypes.byref(wheel), ctypes.sizeof(INPUT))
+        return target, "send"
+    wparam = (delta & 0xFFFF) << 16  # no keys held
+    lparam = ((point.y & 0xFFFF) << 16) | (point.x & 0xFFFF)
+    user32.PostMessageW(target, WM_MOUSEWHEEL, wparam, lparam)
+    return target, "post"
 
 
 def client_rows(hwnd):
@@ -258,6 +298,9 @@ class Stack(QObject):
             bottom = min(max(bottom, frame.bottom()), monitor.bottom())
             self.view = QRect(frame.left(), top, frame.width(), bottom - top + 1)
         self.escape = EscapeKey(self.finish)
+        self.through_timer = QTimer(self)  # ends the click-through moment (pass_wheel)
+        self.through_timer.setSingleShot(True)
+        self.through_timer.timeout.connect(lambda: self.set_click_through(False))
         mouse_screen = QGuiApplication.screenAt(QCursor.pos())
         under_mouse = next((o for o in self.overlays if o.screen() == mouse_screen), self.overlays[0])
         self.cursor = under_mouse.to_physical(under_mouse.mapFromGlobal(QCursor.pos()))
@@ -395,6 +438,16 @@ class Stack(QObject):
             self.pieces.pop()
             self.update()
 
+    def click_through(self):
+        """Let the mouse through all overlays for a moment, so a sent wheel reaches
+        the window below. Each new wheel makes the moment longer."""
+        self.set_click_through(True)
+        self.through_timer.start(CLICK_THROUGH_MS)
+
+    def set_click_through(self, on):
+        for overlay in self.overlays:
+            set_click_through(int(overlay.winId()), on)
+
     def update(self, *areas):
         """Repaint the monitors that show these areas (all if none given)."""
         areas = [a for a in areas if a is not None]
@@ -405,6 +458,7 @@ class Stack(QObject):
     def close(self):
         """Stop without the finished signal."""
         self.running = False
+        self.through_timer.stop()
         if self.timer:
             self.timer.stop()
         else:
@@ -448,18 +502,23 @@ class StackOverlay(QWidget):
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
-        target = pass_wheel(int(self.winId()), delta) if delta else None
+        target, how = pass_wheel(self.stack, int(self.winId()), delta) if delta else (None, "-")
         if self.stack.debug.folder:
             root = user32.GetAncestor(target, GA_ROOT) if target else None
             self.stack.debug.log(f"wheel  angle={event.angleDelta().y()}  pixel={event.pixelDelta().y()}  "
-                                 f"phase={event.phase().name}  target={class_name(target) if target else '-'}  "
+                                 f"phase={event.phase().name}  how={how}  "
+                                 f"target={class_name(target) if target else '-'}  "
                                  f"root={class_name(root) if root else '-'}")
 
     def nativeEvent(self, event_type, message):
-        if self.stack.debug.folder and event_type == b"windows_generic_MSG":
+        if event_type == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(int(message))
+            if msg.message == WM_MOUSEWHEEL and user32.GetMessageExtraInfo() == OWN_WHEEL:
+                # Our own wheel came back (the click-through did not work): don't send it again.
+                self.stack.debug.log("own wheel came back to the overlay")
+                return True, 0
             name = DEBUG_MESSAGES.get(msg.message)
-            if name:
+            if name and self.stack.debug.folder:
                 self.stack.debug.log(f"raw  {name}  wparam={msg.wParam:#x}  lparam={msg.lParam:#x}  "
                                      f"foreground={class_name(user32.GetForegroundWindow())}")
         return super().nativeEvent(event_type, message)
