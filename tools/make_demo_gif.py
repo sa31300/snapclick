@@ -1,5 +1,5 @@
-r"""Make docs/demo.gif and docs/stack.gif: the real overlay code, run on a
-neutral demo screen with made-up content (no real screen is shown).
+r"""Make docs/demo.gif and docs/stack.gif: the real overlay code, run on
+neutral demo screens with made-up content (no real screen or site is shown).
 
     .venv\Scripts\python tools\make_demo_gif.py
 """
@@ -172,10 +172,13 @@ def make_capture_gif(app):
 # --- the stack GIF ---------------------------------------------------------
 
 LINE_HEIGHT = 20
-WINDOW = QRect(40, 40, 620, 540)  # the made-up terminal, in GIF pixels
+WINDOW = QRect(40, 40, 620, 540)  # the made-up terminal or browser, in GIF pixels
 TEXT_TOP = WINDOW.top() + 40
 TEXT_BOTTOM = WINDOW.bottom() - 10
-FRAME = QRect(60, 88, 560, 400)  # piece 1, inside the text
+FRAME = QRect(60, 88, 560, 400)  # piece 1 in the terminal, inside the text
+PAGE_TOP = WINDOW.top() + 72  # below the browser's tab and address bars
+POST_HEIGHT = 64
+BROWSER_FRAME = QRect(60, 128, 560, 360)  # piece 1 in the browser, inside the page
 
 
 def log_lines():
@@ -185,6 +188,16 @@ def log_lines():
     for i in range(1, 140):
         lines.append(f"{i:03d}  PASS  tests/test_{names[i % 10]}.py::case_{(i * 7) % 50:02d}")
     return lines
+
+
+def posts():
+    """Made-up posts on a made-up site, every one different: (title, details)."""
+    starts = ["Tiny", "Quiet", "Cozy", "Handy", "Simple", "Slow"]
+    topics = ["desk lamp build", "sourdough notes", "bike repair log", "balcony garden", "pixel art set",
+              "tea tasting list", "synth patch ideas"]
+    return [(f"{starts[i % 6]} {topics[i % 7]}, week {i + 1}",
+             f"{(i * 37) % 400 + 12} points · {(i * 13) % 90 + 2} comments · {i % 23 + 1} h ago")
+            for i in range(42)]
 
 
 def draw_terminal(scroll):
@@ -217,11 +230,61 @@ def draw_terminal(scroll):
     return image
 
 
-def make_stack_gif(app):
-    """Piece 1 is taken; Add below, scroll, click twice, Finish."""
-    screen = min(QApplication.screens(), key=lambda s: s.devicePixelRatio())  # sharpest text
-    area = capture.physical_rect(screen)
-    crop = QRect(area.topLeft(), QRect(0, 0, W, H).size())  # top-left, so the hint shows
+def draw_browser(scroll):
+    """The demo screen with a made-up site in a plain browser, scrolled down by `scroll` px."""
+    image = QImage(W, H, QImage.Format.Format_RGB32)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.fillRect(image.rect(), QColor("#2B3A4A"))  # wallpaper
+    p.fillRect(WINDOW, QColor("#F4F4F2"))
+    p.fillRect(WINDOW.x(), WINDOW.y(), WINDOW.width(), 32, QColor("#202124"))  # tab bar
+    p.fillRect(WINDOW.x() + 8, WINDOW.y() + 6, 220, 26, QColor("#35363A"))  # the one tab
+    p.fillRect(WINDOW.x(), WINDOW.y() + 32, WINDOW.width(), 40, QColor("#35363A"))  # address bar
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#202124"))
+    p.drawRoundedRect(QRect(WINDOW.x() + 12, WINDOW.y() + 38, WINDOW.width() - 24, 28), 14, 14)
+    p.setFont(QFont("IBM Plex Sans", 10))
+    p.setPen(QColor("#E7E7E4"))
+    p.drawText(QRect(WINDOW.x() + 20, WINDOW.y() + 6, 200, 26), Qt.AlignmentFlag.AlignVCenter, "Loopnotes · Latest")
+    p.setPen(QColor("#A3A39E"))
+    p.drawText(QRect(WINDOW.x() + 28, WINDOW.y() + 38, 400, 28), Qt.AlignmentFlag.AlignVCenter,
+               "loopnotes.example/latest")
+    p.setClipRect(QRect(WINDOW.x(), PAGE_TOP, WINDOW.width(), WINDOW.bottom() - PAGE_TOP + 1))
+    top = PAGE_TOP - scroll
+    p.setPen(QColor("#1D1D1F"))
+    p.setFont(QFont("IBM Plex Sans", 16, QFont.Weight.Medium))
+    p.drawText(WINDOW.x() + 24, top + 36, "Loopnotes — latest posts")
+    for i, (title, details) in enumerate(posts()):
+        y = top + 56 + i * POST_HEIGHT
+        if PAGE_TOP - POST_HEIGHT < y < WINDOW.bottom() + POST_HEIGHT:
+            p.setPen(QColor("#E2E2DE"))
+            p.drawLine(WINDOW.x() + 24, y, WINDOW.right() - 24, y)
+            p.setPen(QColor("#1D1D1F"))
+            p.setFont(QFont("IBM Plex Sans", 12, QFont.Weight.Medium))
+            p.drawText(WINDOW.x() + 24, y + 28, title)
+            p.setPen(QColor("#77776F"))
+            p.setFont(QFont("IBM Plex Sans", 9))
+            p.drawText(WINDOW.x() + 24, y + 48, details)
+    p.end()
+    return image
+
+
+def scene_label(image, text):
+    """Which scene this is, top right (the hint bar is top left)."""
+    p = QPainter(image)
+    p.setFont(QFont("JetBrains Mono", 12, QFont.Weight.DemiBold))
+    width = p.fontMetrics().horizontalAdvance(text) + 28
+    box = QRect(W - width - 16, 14, width, 34)
+    p.fillRect(box, QColor("#0D0E10"))
+    p.setPen(QColor("#FFB000"))
+    p.drawRect(box.adjusted(0, 0, -1, -1))
+    p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+    p.end()
+
+
+def stack_scene(app, frames, crop, area, draw, frame, label, key, step, scrolls, show_result):
+    """Piece 1 is taken; Add below, then for each entry in `scrolls`: scroll that many
+    notches (`step` px each, shown with the `key` keycap) and click. Then Finish."""
     scroll = {"px": 0}
 
     def fake_grab(rect):
@@ -229,22 +292,19 @@ def make_stack_gif(app):
         image = QImage(rect.size(), QImage.Format.Format_RGB32)
         image.fill(QColor("#2B3A4A"))
         p = QPainter(image)
-        p.drawImage(crop.topLeft() - rect.topLeft(), draw_terminal(scroll["px"]))
+        p.drawImage(crop.topLeft() - rect.topLeft(), draw(scroll["px"]))
         p.end()
         return image
 
-    real_grab, real_below = stack.grab, stack.window_below
     stack.grab = fake_grab
-    stack.window_below = lambda *args: None  # leave real windows alone
-    frames = []
-    first = draw_terminal(0).copy(FRAME)
+    first = draw(0).copy(frame)
     preview = Preview(first, can_save=True, save_folder=SAVE_FOLDER)
     preview.timer.stop()
     state = {"stack": None, "mouse": QPoint(700, 140), "key": None}
 
     def compose(ms=70):
         app.processEvents()
-        image = draw_terminal(scroll["px"])
+        image = draw(scroll["px"])
         p = QPainter(image)
         s = state["stack"]
         if s and s.overlays:
@@ -257,6 +317,7 @@ def make_stack_gif(app):
         state["thumb_at"] = QPoint(W - thumb.width() - 16, H - thumb.height() - 16)
         p.drawImage(state["thumb_at"], thumb)
         p.end()
+        scene_label(image, label)
         if state["key"]:
             keycap(image, state["key"], 150)
         pointer(image, state["mouse"])
@@ -275,68 +336,70 @@ def make_stack_gif(app):
     def button(name):
         return state["thumb_at"] + preview.buttons[name].center() + QPoint(2, 3)
 
-    def wheel(notches, key="wheel ↓"):
-        """Scroll down, one notch (3 lines) at a time: the wheel, or ↓ (each press = one notch)."""
-        state["key"] = key
-        for _ in range(notches):
-            scroll["px"] += 3 * LINE_HEIGHT  # 3 lines per notch
-            s = state["stack"]
-            s.read()
-            s.show_read()
-            compose(110)
-        state["key"] = None
-        compose(300)
-
-    def click_frame_bottom():
-        state["stack"].click(crop.topLeft() + state["mouse"])
-        compose(900)
-
-    compose(900)  # piece 1 taken: "copied to clipboard"
-    glide(button("add"), 14)
+    compose(1000)  # piece 1 taken: "copied to clipboard"
+    glide(button("add"), 10)
     preview.set_hover("add")  # "add below · start a stack"
-    compose(1300)
+    compose(900)
     preview.set_hover(None)
     preview.start_stack()
-    s = stack.Stack(FRAME.translated(crop.topLeft()), first, [preview])
+    s = stack.Stack(frame.translated(crop.topLeft()), first, [preview])
     s.changed.connect(lambda: preview.set_stack(s.image(), s.count()))
     state["stack"] = s
     s.read()
     s.show_read()
-    glide(QPoint(330, 300), 12)
-    compose(900)
-    wheel(3)
-    glide(QPoint(330, FRAME.bottom() - 4), 10)
-    compose(700)
-    click_frame_bottom()  # piece 2
-    wheel(9, "↓")  # ↓ presses (browsers): the end line is now above the screen
-    glide(QPoint(330, FRAME.bottom() - 4), 6)
-    compose(1400)  # "↑ + ... px above, recorded while scrolling"
-    click_frame_bottom()  # piece 3
-    glide(QPoint(450, 300), 6)
-    glide(button("finish"), 12)
+    glide(QPoint(330, 300), 8)
+    compose(500)
+    for notches in scrolls:
+        state["key"] = key
+        for _ in range(notches):
+            scroll["px"] += step
+            s.read()
+            s.show_read()
+            compose(150)
+        state["key"] = None
+        compose(300)
+        glide(QPoint(330, frame.bottom() - 4), 7)
+        compose(600)  # after a long scroll: "↑ + ... px above, recorded while scrolling"
+        s.click(crop.topLeft() + state["mouse"])
+        compose(800)
+    glide(QPoint(450, 300), 5)
+    glide(button("finish"), 9)
     preview.set_hover("finish")  # "finish · stop adding"
-    compose(1100)
+    compose(800)
     s.finish()
     state["stack"] = None
     preview.set_hover(None)
     result = s.image()
-    preview.finish_stack(result, s.count(), None)  # "copied · 3 pieces · ..."
-    compose(2000)
-
-    # The result: one tall image.
-    image = QImage(W, H, QImage.Format.Format_RGB32)
-    image.fill(QColor("#2B3A4A"))
-    tall = result.scaledToHeight(H - 80, Qt.TransformationMode.SmoothTransformation)
-    p = QPainter(image)
-    p.drawImage((W - tall.width()) // 2, 24, tall)
-    p.setPen(QColor("#FFB000"))
-    p.drawRect(QRect((W - tall.width()) // 2 - 1, 23, tall.width() + 1, tall.height() + 1))
-    p.setFont(QFont("JetBrains Mono", 13))
-    p.drawText(QRect(0, H - 48, W, 30), Qt.AlignmentFlag.AlignCenter,
-               f"3 pieces → one image, {result.width()}×{result.height()}")
-    p.end()
-    frames.append((to_pil(image), 2600))
+    preview.finish_stack(result, s.count(), None)  # "copied · N pieces · ..."
+    compose(1400)
     preview.close()
+    if show_result:  # one tall image
+        image = QImage(W, H, QImage.Format.Format_RGB32)
+        image.fill(QColor("#2B3A4A"))
+        tall = result.scaledToHeight(H - 80, Qt.TransformationMode.SmoothTransformation)
+        p = QPainter(image)
+        p.drawImage((W - tall.width()) // 2, 24, tall)
+        p.setPen(QColor("#FFB000"))
+        p.drawRect(QRect((W - tall.width()) // 2 - 1, 23, tall.width() + 1, tall.height() + 1))
+        p.setFont(QFont("JetBrains Mono", 13))
+        p.drawText(QRect(0, H - 48, W, 30), Qt.AlignmentFlag.AlignCenter,
+                   f"{s.count()} pieces → one image, {result.width()}×{result.height()}")
+        p.end()
+        frames.append((to_pil(image), 2400))
+
+
+def make_stack_gif(app):
+    """Two scenes: a terminal scrolled with the wheel, then a browser scrolled with ↓."""
+    screen = min(QApplication.screens(), key=lambda s: s.devicePixelRatio())  # sharpest text
+    area = capture.physical_rect(screen)
+    crop = QRect(area.topLeft(), QRect(0, 0, W, H).size())  # top-left, so the hint shows
+    real_grab, real_below = stack.grab, stack.window_below
+    stack.window_below = lambda *args: None  # leave real windows alone
+    frames = []
+    stack_scene(app, frames, crop, area, draw_terminal, FRAME, "Terminal: touchpad or wheel", "wheel ↓",
+                3 * LINE_HEIGHT, [4], show_result=False)
+    stack_scene(app, frames, crop, area, draw_browser, BROWSER_FRAME, "Browser: press ↓", "↓",
+                80, [4, 6], show_result=True)
     stack.grab, stack.window_below = real_grab, real_below
     save_gif(frames, STACK_OUT)
 
