@@ -275,8 +275,9 @@ def make_stack_gif(app):
     def button(name):
         return state["thumb_at"] + preview.buttons[name].center() + QPoint(2, 3)
 
-    def wheel(notches):
-        state["key"] = "wheel ↓"
+    def wheel(notches, key="wheel ↓"):
+        """Scroll down, one notch (3 lines) at a time: the wheel, or ↓ (each press = one notch)."""
+        state["key"] = key
         for _ in range(notches):
             scroll["px"] += 3 * LINE_HEIGHT  # 3 lines per notch
             s = state["stack"]
@@ -307,7 +308,7 @@ def make_stack_gif(app):
     glide(QPoint(330, FRAME.bottom() - 4), 10)
     compose(700)
     click_frame_bottom()  # piece 2
-    wheel(9)  # past the frame: the end line is now above the screen
+    wheel(9, "↓")  # ↓ presses (browsers): the end line is now above the screen
     glide(QPoint(330, FRAME.bottom() - 4), 6)
     compose(1400)  # "↑ + ... px above, recorded while scrolling"
     click_frame_bottom()  # piece 3
