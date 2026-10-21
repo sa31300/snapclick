@@ -1,10 +1,13 @@
 """Draw window (docs/SPEC.md §2c): mark up a capture before it goes to the clipboard.
 
 The window shows the captured picture at 100% (real pixels), with a header and
-a toolbar. ✓ done or Enter gives the picture back; Esc closes it with no change.
+a toolbar. Drawings are kept as a list of shapes in picture pixels and painted on
+top; ✓ done or Enter gives the picture back with them; Esc closes with no change.
 """
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QGuiApplication, QPainter
+import math
+
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
@@ -19,6 +22,9 @@ TOOLS = [("arrow", "→ arrow"), ("box", "□ box"), ("mark", "▬ mark"), ("tex
          ("step", "1 step")]
 COLORS = {"red": "#E5383B", "blue": "#2F80ED", "green": "#27AE60"}
 SCREEN_PART = 0.9  # the window is at most 90% of the monitor
+LINE = 3  # px in the picture, for boxes and arrows
+HEAD_LENGTH, HEAD_WIDTH = 16, 12  # arrow head, px in the picture
+MIN_DRAG = 4  # px; a shorter drag is a stray click, not a drawing
 
 STYLE = f"""
 QWidget#draw {{ background: {BG}; border: 1px solid {BORDER}; }}
@@ -47,18 +53,79 @@ def draw_title(mode, count, image):
     return f"stack · {count} {'piece' if count == 1 else 'pieces'} · {size}"
 
 
-class Canvas(QWidget):
-    """The picture at 100%: one image pixel = one screen pixel."""
+def paint_shapes(p, shapes):
+    """Paint the drawings, in picture pixels. Shape: (kind, color, start, end)."""
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    for kind, color, start, end in shapes:
+        color = QColor(color)
+        if kind == "box":
+            p.setPen(QPen(color, LINE, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap, Qt.PenJoinStyle.MiterJoin))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(QRectF(start, end).normalized())
+        elif kind == "arrow":
+            angle = math.atan2(end.y() - start.y(), end.x() - start.x())
+            along = QPointF(math.cos(angle), math.sin(angle))
+            across = QPointF(-along.y(), along.x())
+            base = end - along * HEAD_LENGTH
+            p.setPen(QPen(color, LINE, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(start, base + along * 2)  # the shaft ends inside the head
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawPolygon(QPolygonF([end, base + across * (HEAD_WIDTH / 2), base - across * (HEAD_WIDTH / 2)]))
 
-    def __init__(self, image, ratio):
+
+def render(image, shapes):
+    """The picture with the drawings on it, same size as the capture."""
+    result = image.copy()
+    p = QPainter(result)
+    paint_shapes(p, shapes)
+    p.end()
+    return result
+
+
+class Canvas(QWidget):
+    """The picture at 100% (one image pixel = one screen pixel) and its drawings.
+    Drag with box or arrow to add one."""
+
+    def __init__(self, owner, image, ratio):
         super().__init__()
+        self.owner = owner  # the draw window: tool, color and the shapes list
         self.image = image
         self.ratio = ratio  # screen pixels per Qt point on this monitor
+        self.drag = None  # the shape being drawn
         self.setFixedSize(QSize(round(image.width() / ratio), round(image.height() / ratio)))
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def to_picture(self, pos):
+        """Widget point → picture pixel, kept inside the picture."""
+        return QPointF(min(max(pos.x() * self.ratio, 0), self.image.width()),
+                       min(max(pos.y() * self.ratio, 0), self.image.height()))
+
+    def mousePressEvent(self, event):
+        tool = self.owner.tool()
+        if event.button() == Qt.MouseButton.LeftButton and tool in ("box", "arrow"):
+            point = self.to_picture(event.position())
+            self.drag = (tool, self.owner.color(), point, point)
+
+    def mouseMoveEvent(self, event):
+        if self.drag:
+            kind, color, start, _ = self.drag
+            self.drag = (kind, color, start, self.to_picture(event.position()))
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if self.drag:
+            kind, color, start, end = self.drag
+            self.drag = None
+            if math.dist((start.x(), start.y()), (end.x(), end.y())) >= MIN_DRAG:
+                self.owner.shapes.append((kind, color, start, end))
+            self.update()
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.drawImage(self.rect(), self.image)
+        p.scale(1 / self.ratio, 1 / self.ratio)
+        p.drawImage(0, 0, self.image)
+        paint_shapes(p, self.owner.shapes + ([self.drag] if self.drag else []))
 
 
 class DrawWindow(QWidget):
@@ -74,6 +141,7 @@ class DrawWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setStyleSheet(STYLE)
         self.image = image
+        self.shapes = []  # drawings, oldest first: (kind, color, start, end) in picture pixels
         screen = QGuiApplication.screenAt(home) or QGuiApplication.primaryScreen()
 
         header = QWidget(objectName="header")
@@ -98,7 +166,9 @@ class DrawWindow(QWidget):
             row.addWidget(swatch)
             row.addSpacing(4)
         row.addStretch()
-        row.addWidget(self.button("↶ undo"))
+        undo = self.button("↶ undo")
+        undo.clicked.connect(self.undo)
+        row.addWidget(undo)
         row.addSpacing(8)
         done = self.button("✓ done", object_name="done")
         done.clicked.connect(self.finish)
@@ -107,7 +177,8 @@ class DrawWindow(QWidget):
         scroll = QScrollArea()
         scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        scroll.setWidget(Canvas(image, screen.devicePixelRatio()))
+        self.canvas = Canvas(self, image, screen.devicePixelRatio())
+        scroll.setWidget(self.canvas)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(1, 1, 1, 1)
@@ -142,8 +213,19 @@ class DrawWindow(QWidget):
             button.setProperty("name", name)
         return button
 
+    def tool(self):
+        return self.tools.checkedButton().property("name")
+
+    def color(self):
+        return COLORS[self.colors.checkedButton().property("name")]
+
+    def undo(self):
+        if self.shapes:
+            self.shapes.pop()
+            self.canvas.update()
+
     def finish(self):
-        self.done.emit(self.image)
+        self.done.emit(render(self.image, self.shapes))
         self.close()
 
     def keyPressEvent(self, event):

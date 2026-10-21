@@ -6,9 +6,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # no windows on screen
 
 from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from snapclick.draw import DrawWindow, draw_title
+from snapclick.draw import COLORS, DrawWindow, draw_title
 from snapclick.preview import Preview
 
 app = QApplication.instance() or QApplication([])
@@ -81,6 +82,61 @@ class DrawWindowTest(unittest.TestCase):
         press(window, Qt.Key.Key_Escape)
         self.assertEqual(results["done"], [])
         self.assertEqual(results["closed"], 1)
+
+
+class DrawingTest(unittest.TestCase):
+    """Drag with the mouse on the picture, then ✓ (spec §2c, build step 2)."""
+
+    def setUp(self):
+        self.window = DrawWindow(picture(), "shot · 300×200", QPoint(0, 0))
+        self.window.canvas.ratio = 1  # 1 widget point = 1 picture pixel, whatever the test screen says
+        self.results = []
+        self.window.done.connect(self.results.append)
+
+    def drag(self, start, end):
+        canvas = self.window.canvas
+        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+        QTest.mouseMove(canvas, end)
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+
+    def pick(self, group, name):
+        next(b for b in group.buttons() if b.property("name") == name).setChecked(True)
+
+    def test_box_in_red_by_default(self):
+        self.drag(QPoint(50, 40), QPoint(150, 120))
+        self.window.finish()
+        image = self.results[0]
+        self.assertEqual(image.size(), picture().size())  # nothing cut or scaled
+        self.assertEqual(image.pixelColor(50, 80), QColor(COLORS["red"]))  # left edge
+        self.assertEqual(image.pixelColor(100, 80), QColor("#336699"))  # inside stays clear
+
+    def test_blue_arrow(self):
+        self.pick(self.window.tools, "arrow")
+        self.pick(self.window.colors, "blue")
+        self.drag(QPoint(40, 100), QPoint(240, 100))
+        self.window.finish()
+        self.assertEqual(self.results[0].pixelColor(120, 100), QColor(COLORS["blue"]))  # the shaft
+        self.assertEqual(self.results[0].pixelColor(235, 100), QColor(COLORS["blue"]))  # the head
+
+    def test_click_without_drag_draws_nothing(self):
+        self.drag(QPoint(50, 40), QPoint(51, 41))
+        self.assertEqual(self.window.shapes, [])
+
+    def test_undo(self):
+        self.drag(QPoint(50, 40), QPoint(150, 120))
+        self.drag(QPoint(20, 20), QPoint(80, 60))
+        self.window.undo()
+        self.assertEqual(len(self.window.shapes), 1)
+        self.window.undo()
+        self.window.undo()  # nothing left: no error
+        self.window.finish()
+        self.assertEqual(self.results[0].pixelColor(50, 80), QColor("#336699"))
+
+    def test_preview_label_after_done(self):
+        preview = Preview(picture(), can_save=True, save_folder="demo")
+        preview.show_drawn(picture())
+        self.assertEqual(preview.label()[0], "copied · with drawings")
+        preview.close()
 
 
 if __name__ == "__main__":

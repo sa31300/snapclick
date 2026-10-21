@@ -103,6 +103,7 @@ class Preview(QWidget):
         self.mode = "single"  # "single", "stacking" or "stacked"
         self.count = 1  # stack pieces
         self.held = False  # stays open while the draw window is open
+        self.drawn = False  # the image has drawings (§2c)
         self.home = QCursor.pos()  # the preview shows on this point's monitor
 
         self.label_font = QFont("JetBrains Mono")
@@ -194,6 +195,12 @@ class Preview(QWidget):
             self.timer.stop()
         elif not self.underMouse():
             self.timer.start()
+
+    def show_drawn(self, image):
+        """The picture now has drawings: show it, and say so."""
+        self.image, self.drawn = image, True
+        self.place()
+        self.update()
 
     def start_stack(self):
         """Stay open, show Finish and Retake, never appear in screen reads."""
@@ -296,6 +303,8 @@ class Preview(QWidget):
             return "save failed", None, MUTED
         if self.hover == "save":
             return self.save_folder, None, BLUE
+        if self.drawn:
+            return "copied · with drawings", None, GREEN
         if self.mode == "stacked":
             pieces = "piece" if self.count == 1 else "pieces"
             size = f"{self.image.width()}×{self.image.height()}"

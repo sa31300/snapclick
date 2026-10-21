@@ -182,8 +182,13 @@ class Tray(QSystemTrayIcon):
         p = self.preview
         p.hold(True)
         self.draw_window = DrawWindow(p.image, draw_title(p.mode, p.count, p.image), p.home)
-        self.draw_window.done.connect(self.copy)
+        self.draw_window.done.connect(self._drawn)
         self.draw_window.closed.connect(self._draw_closed)
+
+    def _drawn(self, image):
+        """✓ done: the clipboard and the thumbnail get the picture with drawings."""
+        self.copy(image)
+        self.preview.show_drawn(image)
 
     def _draw_closed(self):
         self.draw_window = None
