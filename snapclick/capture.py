@@ -187,7 +187,7 @@ class Capture(QObject):
         self.clipboard_version = None  # clipboard version right after we copied
         self.first = None  # corner 1, real pixels
         self.cursor = None  # mouse position, real pixels
-        self.overlays = [Overlay(self, screen) for screen in QGuiApplication.screens()]
+        self.overlays = [self.make_overlay(screen) for screen in QGuiApplication.screens()]
         for overlay in self.overlays:
             overlay.show()
         # Give keyboard focus to the overlay under the mouse, so Esc works.
@@ -196,6 +196,9 @@ class Capture(QObject):
         focused.activateWindow()
         focused.setFocus()
         self.move(focused.to_physical(focused.mapFromGlobal(QCursor.pos())))
+
+    def make_overlay(self, screen):
+        return Overlay(self, screen)
 
     def selection(self):
         """Normalized rectangle between corner 1 and the cursor (any direction)."""
@@ -274,6 +277,14 @@ class Overlay(QWidget):
     def label(self, p, text, font, x, y, fg, bg, border=None):
         draw_label(p, text, font, x, y, fg, bg, self.area, self.scale(), border)
 
+    def paint_background(self, p, selection):
+        p.drawImage(self.area.topLeft(), self.dimmed)
+        if selection:
+            p.drawImage(selection.topLeft(), self.capture.image, selection.translated(-self.capture.origin))
+
+    def paint_magnifier(self, p, cursor):
+        draw_magnifier(p, self.capture.image, self.capture.origin, cursor, self.area, self.scale())
+
     def paintEvent(self, event):
         # Draw on an image the size of the monitor in real pixels, so 1 px
         # lines stay sharp at any scaling. Coordinates are desktop pixels.
@@ -281,14 +292,13 @@ class Overlay(QWidget):
         line = max(1, int(s))
         capture = self.capture
         area = self.area
-        canvas = QImage(area.size(), QImage.Format.Format_RGB32)
+        canvas = QImage(area.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        canvas.fill(Qt.GlobalColor.transparent)
         p = QPainter(canvas)
         p.translate(-area.topLeft())
 
-        p.drawImage(area.topLeft(), self.dimmed)
         selection = capture.selection()
-        if selection:
-            p.drawImage(selection.topLeft(), capture.image, selection.translated(-capture.origin))
+        self.paint_background(p, selection)
 
         cursor = capture.cursor
         cursor_here = cursor is not None and area.contains(cursor)
@@ -325,7 +335,7 @@ class Overlay(QWidget):
             margin = round(16 * s)
             self.label(p, f"[click] {step} corner   [esc] cancel", self.font(),
                        area.left() + margin, area.top() + margin, HINT_TEXT, HINT_BG, HINT_BORDER)
-            draw_magnifier(p, capture.image, capture.origin, cursor, area, s)
+            self.paint_magnifier(p, cursor)
 
         p.end()
         QPainter(self).drawImage(QRectF(self.rect()), canvas)

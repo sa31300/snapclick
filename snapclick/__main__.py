@@ -10,7 +10,8 @@ from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from snapclick import settings
-from snapclick.hotkey import VK_SNAPSHOT, GlobalHotkey, snipping_tool_owns_prtsc
+from snapclick.hotkey import (RECORD_HOTKEY, RECORD_HOTKEY_ID, VK_SNAPSHOT, GlobalHotkey,
+                             snipping_tool_owns_prtsc)
 from snapclick.tray import Tray, make_icon
 
 ERROR_ALREADY_EXISTS = 183
@@ -62,6 +63,18 @@ def warn_once_if_hotkey_taken(hotkey):
     settings.save(prefs)
 
 
+def warn_once_if_insert_taken(hotkey):
+    if hotkey.registered:
+        return
+    prefs = settings.load()
+    if prefs.get("insert_warning_shown"):
+        return
+    QMessageBox.information(None, "Snapclick", "Another app is already using Insert, so Snapclick can't use it.\n\n"
+                            "Record still works from the tray's right-click menu → Record.")
+    prefs["insert_warning_shown"] = True
+    settings.save(prefs)
+
+
 def main():
     app = QApplication(sys.argv)
     if already_running():
@@ -75,9 +88,13 @@ def main():
     tray.show()
 
     tray.hotkey = GlobalHotkey(app, tray.start_capture, settings.load()["hotkey"])
+    tray.record_hotkey = GlobalHotkey(app, tray.start_record, RECORD_HOTKEY, RECORD_HOTKEY_ID)
     tray.update_tooltip()
     app.aboutToQuit.connect(tray.hotkey.unregister)
+    app.aboutToQuit.connect(tray.record_hotkey.unregister)
+    app.aboutToQuit.connect(lambda: tray.recording.close() if tray.recording else None)
     warn_once_if_hotkey_taken(tray.hotkey)
+    warn_once_if_insert_taken(tray.record_hotkey)
     if settings.load()["start_with_windows"]:
         settings.set_start_with_windows(True)  # keep the path current if the app moved
 

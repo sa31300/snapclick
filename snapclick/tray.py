@@ -11,6 +11,7 @@ from snapclick import settings
 from snapclick.capture import Capture, clipboard_version, restore_clipboard
 from snapclick.draw import DrawWindow, draw_title
 from snapclick.preview import Preview
+from snapclick.record import Record
 from snapclick.stack import Stack
 from snapclick.settings_window import SettingsWindow
 
@@ -83,12 +84,14 @@ class Tray(QSystemTrayIcon):
         super().__init__()
         self.app = app
         self.capture = None  # the running capture, if any
+        self.recording = None
         self.settings_window = None
         self.preview = None
         self.draw_window = None  # the open draw window (§2c), if any
         self.stack = None  # the running stack (long capture), if any
         self.undo = None  # what the preview's Retake needs to undo the last capture
         self.hotkey = None  # GlobalHotkey, set by main
+        self.record_hotkey = None
         self.light = taskbar_is_light()
         self.setIcon(make_icon(self.light))
         self.update_tooltip()
@@ -102,9 +105,12 @@ class Tray(QSystemTrayIcon):
 
     def _build_menu(self):
         menu = QMenu()
-        capture_action = QAction("Capture", menu)
+        capture_action = QAction("Capture\tPrtSc", menu)
         capture_action.triggered.connect(self.start_capture)
         menu.addAction(capture_action)
+        record_action = QAction("Record\tInsert", menu)
+        record_action.triggered.connect(self.start_record)
+        menu.addAction(record_action)
         settings_action = QAction("Settings…", menu)
         settings_action.triggered.connect(self.open_settings)
         menu.addAction(settings_action)
@@ -135,7 +141,7 @@ class Tray(QSystemTrayIcon):
             self.start_capture()
 
     def start_capture(self, frozen=None):
-        if self.capture:  # already capturing: ignore a second PrtSc
+        if self.capture or self.recording:  # only one selection/session at a time
             return
         if self.stack:
             self.stack.finish()  # keep the stack so far
@@ -143,6 +149,18 @@ class Tray(QSystemTrayIcon):
         self.capture = Capture(frozen)
         self.capture.captured.connect(self._captured)
         self.capture.finished.connect(self._capture_done)
+
+    def start_record(self):
+        if self.capture or self.recording:
+            return
+        if self.stack:
+            self.stack.finish()
+        self.close_preview()
+        self.recording = Record()
+        self.recording.finished.connect(self._record_done)
+
+    def _record_done(self):
+        self.recording = None
 
     def _capture_done(self):
         self.capture = None
