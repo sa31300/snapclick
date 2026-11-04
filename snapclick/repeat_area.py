@@ -2,7 +2,7 @@
 import ctypes
 
 from PySide6.QtCore import QObject, QRect, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen
 
 from snapclick.capture import ACCENT, exclude_from_capture, grab
 from snapclick.hotkey import GlobalHotkey, REPEAT_ESCAPE_ID
@@ -10,6 +10,8 @@ from snapclick.record import RecordBorder
 
 REFERENCE_HEIGHT = 40  # real pixels: a few lines, without shrinking the text
 REFERENCE_GAP = 6
+REFERENCE_TINT = QColor(ACCENT)
+REFERENCE_TINT.setAlphaF(0.18)
 
 
 def reference_strips(frame, image):
@@ -41,6 +43,7 @@ class RepeatBorder(RecordBorder):
         painter.setPen(QPen(ACCENT, 1))
         for rect, image in self.references:
             painter.drawImage(rect.topLeft(), image)
+            painter.fillRect(rect, REFERENCE_TINT)
             painter.drawRect(rect.adjusted(-1, -1, 0, 0))
         painter.end()
 

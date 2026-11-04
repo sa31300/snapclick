@@ -7,7 +7,8 @@ The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the r
 - The owner approved this specification. It is now in [SPEC.md §2e](SPEC.md#2e-repeat-area--full-captures-of-one-fixed-rectangle).
 - The owner confirmed steps 1 and 2 on their PC: fixed border, Esc/Finish and PrtSc appending full images in capture order.
 - The owner approved light reference strips: last bottom lines above the box, last top lines below it. Use existing captured pixels and border windows; no tracking, extra screen reads or timers.
-- Build only step 2b. Save, Draw and Retake integration stay in step 3. Stop for the owner's PC test and OK.
+- The owner tested the strips and confirmed they work, then chose **Soft tint** from three previews: amber at 18% opacity, with no pattern. Tint only the displayed references, leaving captured pixels unchanged.
+- Apply only the remaining step 2b style change. Save, Draw and Retake integration stay in step 3. Stop for the owner's PC test and OK.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Approved: capture a fixed rectangle by pressing a key

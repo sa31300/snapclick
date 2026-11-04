@@ -128,8 +128,8 @@ class RepeatAreaTest(unittest.TestCase):
             self.assertFalse(above[0].intersects(self.frame))
             self.assertFalse(below[0].intersects(self.frame))
         rendered = session.borders[0].grab().toImage()
-        self.assertEqual(rendered.pixelColor(120, 25), bottom)
-        self.assertEqual(rendered.pixelColor(120, 180), top)
+        self.assertEqual(rendered.pixelColor(120, 25), QColor("#556B5B"))  # bottom + 18% amber
+        self.assertEqual(rendered.pixelColor(120, 180), QColor("#854132"))  # top + 18% amber
         self.assertEqual(rendered.pixelColor(120, 110).alpha(), 0)  # live box stays clear
         self.read.assert_not_called()
 

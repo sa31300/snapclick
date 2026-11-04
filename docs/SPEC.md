@@ -264,7 +264,7 @@ Only read the screen when adding an image. There are no periodic screen reads, s
 
 - Above the dashed box: the **bottom** few lines of the last captured image, for scrolling down.
 - Below the dashed box: the **top** few lines of the last captured image, for scrolling up.
-- Each strip is at most 40 real pixels high, at the original image scale, with a thin amber outline and a 6 px gap from the box. Clip at monitor edges; never move a strip inside the capture rectangle.
+- Each strip is at most 40 real pixels high, at the original image scale, with a thin amber outline and a 6 px gap from the box. The owner chose **Soft tint** from three previews: an amber fill at 18% opacity over the reference pixels, with no pattern. Apply the tint only when drawing the strips, so captured images keep their original colors. Clip at monitor edges; never move a strip inside the capture rectangle.
 - Reuse the existing click-through border windows. No extra controls, windows, screen reads, timers, text matching or scroll tracking. Update the strips only when entering the mode or after a new capture, using pixels already captured.
 - Leave strips out of captures with the same exclusion/fallback as the border. Esc or Finish removes them with the border. They are references, not a tracked indication of what is currently visible; captures still append in capture order, including repeats.
 
@@ -287,7 +287,7 @@ Only read the screen when adding an image. There are no periodic screen reads, s
 
 ### Status
 
-The owner confirmed steps 1 and 2 on their PC, then approved light reference strips. Build step 2b next. No step is confirmed until the owner tests it on their PC and says yes.
+The owner confirmed steps 1, 2 and the light reference strips on their PC, then chose Soft tint from three previews. Apply that style as the remaining step 2b change, then stop for its PC test. Save, Draw and Retake remain step 3.
 
 
 ## 3. Tray
