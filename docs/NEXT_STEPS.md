@@ -1,15 +1,15 @@
 # Next steps
 
-## Current priority: review the PNG recording documentation
+## Current priority: define fixed-rectangle capture
 
-The owner confirmed Record steps 1, 2, 2b and 3 on their PC in this chat.
+The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the recording README and demo GIF in this chat.
 
-- The owner approved the recording README/GIF step. Review the new instructions and `docs/record.gif` (fake content only), then stop for the owner's OK.
+- The next task is to decide and specify the fixed-rectangle mode below. Planning is authorized; implementation still waits for the owner's decisions and an approved spec.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
-## Parked idea: capture a fixed rectangle by pressing a key
+## Draft: capture a fixed rectangle by pressing a key
 
-Requested on 2026-11-04. Discuss and specify this after the recording flow; it is not approved for implementation yet.
+Requested on 2026-11-04. The owner has now asked to define this mode. The following is a planning draft, not an addition to the approved specification yet.
 
 1. Press a key (to be decided) and choose a rectangle with two corners.
 2. The rectangle becomes the first image. Its full dashed perimeter stays over the live screen.
@@ -17,11 +17,28 @@ Requested on 2026-11-04. Discuss and specify this after the recording flow; it i
 4. Press the key again to capture whatever is now inside that same rectangle and append it below the previous image.
 5. Repeat. Esc finishes the joined image. Images are appended in capture order, including after scrolling upward.
 
-### Decisions still open
+There are no continuous screen reads in this proposed flow. Content is captured only on a keypress. For example, capturing lines 1–20 and then 61–80 cannot recover lines 21–60, even with overlap removal.
 
-- Which key or entry point starts this mode? PrtSc and Insert already have approved uses.
-- Keep each full image, or remove overlapping content between captures?
-- If overlap removal is chosen, how should it handle scrolling upward, static bars, repeated text and uncertain matches?
+### Key choice: awaiting the owner
+
+PrtSc currently captures a screenshot and Insert starts recording. Proposed choices:
+
+- Shift+PrtSc starts the new mode; plain PrtSc adds each piece while it is active.
+- Shift+PrtSc starts the mode and adds each piece.
+
+### Overlap choice: awaiting the owner
+
+- Try removing overlap: lines 1–20 followed by 11–30 should become lines 1–30 once each.
+- Keep full images: those captures become lines 1–20 followed by 11–30, with the overlap repeated.
+
+If overlap removal is chosen, start with a small test on fake content and measure its cost before adding it to the app.
+
+### Remaining decisions before implementation
+
+- With overlap removal, what should scrolling upward do? Example: capture 21–40, then 11–30. Keep capture order, or put the new lines above the earlier content to preserve reading order?
+- What should happen if there is no overlap or several plausible matches? Do not silently remove uncertain content.
+- How should matching handle static bars, blank areas and look-alike text rows?
+- Confirm which existing clipboard, preview, saving and Retake rules should apply to this mode.
 
 ### Overlap removal and power use
 
