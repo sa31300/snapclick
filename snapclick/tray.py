@@ -143,7 +143,10 @@ class Tray(QSystemTrayIcon):
             self.start_capture()
 
     def start_capture(self, frozen=None):
-        if self.capture or self.recording or self.repeat_area:  # repeat captures come in step 2
+        if self.capture or self.recording:
+            return
+        if self.repeat_area:
+            self.repeat_area.add()
             return
         if self.stack:
             self.stack.finish()  # keep the stack so far
@@ -294,7 +297,8 @@ class Tray(QSystemTrayIcon):
         if (self.capture or self.recording or self.stack or self.repeat_area or self.draw_window or not self.undo
                 or not self.preview or self.preview.mode != "single"):
             return
-        self.repeat_area = RepeatArea(self.undo["frame"])
+        self.repeat_area = RepeatArea(self.undo["frame"], self.preview.image, [self.preview])
+        self.repeat_area.changed.connect(self._repeat_area_changed)
         self.repeat_area.finished.connect(self._repeat_area_finished)
         self.preview.start_repeat_area()
         self.preview.raise_()
@@ -302,6 +306,11 @@ class Tray(QSystemTrayIcon):
     def finish_repeat_area(self):
         if self.repeat_area:
             self.repeat_area.finish()
+
+    def _repeat_area_changed(self):
+        image = self.repeat_area.image()
+        self.copy(image)
+        self.preview.set_repeat_area(image, self.repeat_area.count())
 
     def _repeat_area_finished(self):
         self.repeat_area = None

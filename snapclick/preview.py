@@ -109,7 +109,7 @@ class Preview(QWidget):
         self.saved_path = saved_path  # file written by auto-save or the Save button
         self.save_state = None  # None, "saved" or "failed" (Save button only)
         self.hover = None  # a button name, "link" (the file name) or None
-        self.mode = mode  # "single", "stacking", "stacked", "recorded" or "repeating"
+        self.mode = mode  # "single", "stacking", "stacked", "recorded", "repeating" or "repeated"
         self.count = count  # stack pieces or recording frames
         self.elapsed = elapsed
         self.held = False  # stays open while the draw window is open
@@ -141,6 +141,8 @@ class Preview(QWidget):
             return ["finish", "retake"]
         if self.mode == "repeating":
             return ["finish"]  # active Retake comes in Repeat area step 3
+        if self.mode == "repeated":
+            return []  # final Save/Draw/Retake come in Repeat area step 3
         names = ["add", "repeat", "draw"] if self.mode == "single" else ["draw"]
         if self.can_save:
             names.append("save")
@@ -156,7 +158,7 @@ class Preview(QWidget):
             if real_size.width() > MAX_SIZE.width() or real_size.height() > MAX_SIZE.height() else real_size
         self.thumb_size = thumb
         names = self.button_names()
-        badge = 28 if self.mode == "stacking" else 0
+        badge = 28 if self.mode in ("stacking", "repeating") else 0
         box = thumb.expandedTo(QSize(len(names) * (BUTTON + BUTTON_GAP) + BUTTON_GAP + badge,
                                      2 * BUTTON_GAP + BUTTON))
         width = max(box.width() + 2 * PADDING, MIN_WIDTH)
@@ -217,15 +219,24 @@ class Preview(QWidget):
 
     def start_repeat_area(self):
         self.mode = "repeating"
+        self.count = 1
         self.hover = None
         self.timer.stop()
         exclude_from_capture(self)
         self.place()
         self.update()
 
+    def set_repeat_area(self, image, count):
+        self.image, self.count = image, count
+        # Step 2 is clipboard-only; file integration follows in step 3.
+        self.saved_path = None
+        self.save_state = None
+        self.drawn = False
+        self.place()
+        self.update()
+
     def finish_repeat_area(self):
-        # Step 1 has only image 1: restore its preview and existing Save/Draw state.
-        self.mode = "single"
+        self.mode = "single" if self.count == 1 else "repeated"
         self.hover = None
         self.place()
         self.update()
@@ -320,7 +331,7 @@ class Preview(QWidget):
         if self.mode == "repeating":
             if self.hover == "finish":
                 return "finish · stop adding", None, GREEN
-            return "repeat area · 1 · [esc] done", None, AMBER
+            return f"repeat area · {self.count} · [prtsc] add · [esc] done", None, AMBER
         if self.mode == "stacking":
             if self.hover == "finish":
                 return "finish · stop adding", None, GREEN
@@ -351,6 +362,9 @@ class Preview(QWidget):
             pieces = "piece" if self.count == 1 else "pieces"
             size = f"{self.image.width()}×{self.image.height()}"
             return f"copied · {self.count} {pieces} · {size}", None, GREEN
+        if self.mode == "repeated":
+            size = f"{self.image.width()}×{self.image.height()}"
+            return f"copied · {self.count} images · {size}", None, GREEN
         if self.saved_path:  # auto-saved
             return "saved · ", self.saved_path.name, MUTED
         return "copied to clipboard", None, MUTED
@@ -383,7 +397,7 @@ class Preview(QWidget):
         if self.flash.state() == QVariantAnimation.State.Running:
             p.fillRect(self.image_rect, QColor(255, 255, 255, round(200 * (1 - self.flash.currentValue()))))
 
-        if self.mode == "stacking":  # piece count, top-left
+        if self.mode in ("stacking", "repeating"):  # image count, top-left
             metrics = QFontMetrics(self.badge_font)
             text = str(self.count)
             badge = QRect(self.image_rect.left() + BUTTON_GAP, self.image_rect.top() + BUTTON_GAP,

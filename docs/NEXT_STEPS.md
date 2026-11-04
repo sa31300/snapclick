@@ -1,11 +1,12 @@
 # Next steps
 
-## Current priority: Repeat area step 1
+## Current priority: Repeat area step 2
 
 The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the recording README and demo GIF in this chat.
 
 - The owner approved this specification. It is now in [SPEC.md §2e](SPEC.md#2e-repeat-area--full-captures-of-one-fixed-rectangle).
-- Build only step 1: the preview icon, fixed border and Esc/Finish. No repeated captures yet. Stop for the owner's PC test and OK.
+- The owner confirmed step 1 on their PC: preview icon, fixed border and Esc/Finish.
+- Build only step 2: PrtSc appends full images, with a joined clipboard image and count preview. Save, Draw and Retake integration stay in step 3. Stop for the owner's PC test and OK.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Approved: capture a fixed rectangle by pressing a key

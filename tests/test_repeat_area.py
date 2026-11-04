@@ -1,4 +1,4 @@
-"""Repeat area step 1: preview entry, a passive fixed border and clean finishing."""
+"""Repeat area: passive fixed border, full-image appends and clean finishing."""
 import os
 import tempfile
 import unittest
@@ -30,17 +30,28 @@ class RepeatAreaTest(unittest.TestCase):
         for name, options in (
             ("snapclick.settings.SETTINGS_FILE", {"new": Path(self.folder.name) / "settings.json"}),
             ("snapclick.repeat_area.GlobalHotkey", {}),
+            ("snapclick.repeat_area.exclude_from_capture", {"return_value": True}),
+            ("snapclick.repeat_area.grab", {"side_effect": AssertionError("unexpected screen read")}),
+            ("snapclick.repeat_area.ctypes.windll.dwmapi.DwmFlush", {}),
+            ("snapclick.preview.exclude_from_capture", {"return_value": True}),
             ("snapclick.record.exclude_from_capture", {"return_value": True}),
             ("snapclick.capture.grab_desktop", {"side_effect": AssertionError("unexpected screen read")}),
             ("snapclick.capture.grab", {"side_effect": AssertionError("unexpected screen read")}),
             ("snapclick.record.grab", {"side_effect": AssertionError("unexpected screen read")}),
             ("snapclick.tray.QGuiApplication.clipboard", {}),
+            ("snapclick.tray.clipboard_version", {"return_value": 101}),
         ):
             mock = patch(name, **options)
             result = mock.start()
             self.addCleanup(mock.stop)
             if name.endswith("GlobalHotkey"):
                 self.hotkey = result
+            elif name == "snapclick.repeat_area.grab":
+                self.read = result
+            elif name == "snapclick.repeat_area.exclude_from_capture":
+                self.exclude = result
+            elif name.endswith("DwmFlush"):
+                self.flush = result
             elif name.endswith("clipboard"):
                 self.clipboard = result.return_value
 
@@ -135,16 +146,114 @@ class RepeatAreaTest(unittest.TestCase):
         self.assertIsNone(self.tray.repeat_area)
         self.assertIsNone(self.tray.undo)
 
-    def test_prtsc_and_insert_do_not_start_another_mode_in_step_one(self):
+    def test_prtsc_adds_instead_of_starting_another_selection_and_insert_is_ignored(self):
         self.capture()
         session = self.start()
+        self.read.side_effect = None
+        self.read.return_value = self.first.copy()
         self.tray.start_capture()
         self.tray.start_record()
         self.assertIs(self.tray.repeat_area, session)
         self.assertIsNone(self.tray.capture)
         self.assertIsNone(self.tray.recording)
+        self.assertEqual(self.tray.preview.image.size().height(), 200)
+        self.read.assert_called_once_with(self.frame)
+        self.clipboard.setImage.assert_called_once_with(self.tray.preview.image)
+
+    def test_three_whole_images_stay_in_capture_order_including_duplicates(self):
+        self.capture()
+        session = self.start()
+        second = self.first.copy()
+        second.fill(QColor("#4A6240"))
+        # Repeated content stays at the top of image 2; image 3 repeats image 1.
+        for y in range(50):
+            for x in range(second.width()):
+                second.setPixelColor(x, y, self.first.pixelColor(x, y))
+        self.read.side_effect = [second, self.first.copy()]
+        self.read.assert_not_called()  # entering/scanning the UI never reads the screen
+        for count in (2, 3):
+            self.tray.start_capture()
+            joined = self.tray.preview.image
+            self.assertEqual(joined.size().width(), 160)
+            self.assertEqual(joined.size().height(), 100 * count)
+            self.assertEqual(self.tray.preview.count, count)
+            self.assertEqual(session.count(), count)
+            self.assertIn(f"repeat area · {count} ·", self.tray.preview.label()[0])
+            self.assertFalse(self.tray.preview.timer.isActive())
+            self.assertEqual(self.clipboard.setImage.call_args.args[0], joined)
+        self.assertEqual(joined.copy(0, 0, 160, 100), self.first)
+        self.assertEqual(joined.copy(0, 100, 160, 100), second)
+        self.assertEqual(joined.copy(0, 200, 160, 100), self.first)
+        self.assertEqual(self.read.call_count, 2)
+        self.assertEqual(self.exclude.call_count, len(session.windows))
+        self.flush.assert_not_called()  # supported capture exclusion needs no hiding
+        self.hotkey.call_args.args[1]()
+        app.processEvents()
+        self.assertEqual(self.tray.preview.image, joined)
+        self.assertEqual(self.tray.preview.mode, "repeated")
+        self.assertEqual(self.tray.preview.label()[0], "copied · 3 images · 160×300")
+        self.assertEqual(self.tray.preview.button_names(), [])  # step 3 adds final actions
+        self.assertEqual(self.clipboard.setImage.call_count, 2)  # finishing never overwrites a newer copy
+        self.assertTrue(all(not b.isVisible() for b in session.borders))
+        session.add()
+        self.assertEqual(self.read.call_count, 2)  # a finished session cannot append
+
+    def test_negative_screen_position_is_read_in_real_pixels_without_resizing(self):
+        self.frame = QRect(-600, 100, 160, 100)
+        self.capture()
+        self.start()
+        self.read.side_effect = None
+        self.read.return_value = self.first.copy()
+        self.tray.start_capture()
+        self.read.assert_called_once_with(QRect(-600, 100, 160, 100))
+        self.assertEqual(self.tray.preview.image.copy(0, 100, 160, 100), self.first)
+
+    def test_fallback_hides_all_own_windows_only_for_the_read_and_restores_opacity(self):
+        self.capture()
+        self.exclude.return_value = False
+        session = self.start()
+        session.borders[0].setWindowOpacity(0.75)
+        before = [w.windowOpacity() for w in session.windows]
+
+        def read(frame):
+            self.assertEqual(frame, self.frame)
+            self.assertTrue(all(w.windowOpacity() == 0 for w in session.windows))
+            self.flush.assert_called_once()
+            return self.first.copy()
+
+        self.read.side_effect = read
+        self.tray.start_capture()
+        self.assertEqual([w.windowOpacity() for w in session.windows], before)
+        self.assertTrue(all(w.isVisible() for w in session.windows))
+        self.assertEqual(session.count(), 2)
+
+    def test_failed_fallback_read_restores_windows_and_keeps_previous_image(self):
+        self.capture()
+        self.exclude.return_value = False
+        session = self.start()
+        self.read.side_effect = RuntimeError("demo read failure")
+        with self.assertRaisesRegex(RuntimeError, "demo read failure"):
+            session.add()
+        self.assertTrue(all(w.windowOpacity() == 1 for w in session.windows))
+        self.assertEqual(session.count(), 1)
         self.assertEqual(self.tray.preview.image, self.first)
         self.clipboard.setImage.assert_not_called()
+
+    def test_finishing_three_images_with_button_keeps_result_and_releases_hotkey(self):
+        self.capture()
+        session = self.start()
+        self.read.side_effect = [self.first.copy(), self.first.copy()]
+        self.tray.start_capture()
+        self.tray.start_capture()
+        preview = self.tray.preview
+        QTest.mouseClick(preview, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                         preview.buttons["finish"].center())
+        self.assertTrue(session.closed)
+        self.assertIsNone(self.tray.repeat_area)
+        self.assertEqual(preview.mode, "repeated")
+        self.assertEqual(preview.count, 3)
+        self.hotkey.return_value.close.assert_called_once()
+        self.assertEqual(preview.image.height(), 300)
 
     def test_auto_saved_first_file_is_unchanged_in_step_one(self):
         self.capture(auto_save=True)
