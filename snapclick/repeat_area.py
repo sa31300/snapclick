@@ -2,11 +2,47 @@
 import ctypes
 
 from PySide6.QtCore import QObject, QRect, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QImage, QPainter
+from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPen
 
 from snapclick.capture import ACCENT, exclude_from_capture, grab
 from snapclick.hotkey import GlobalHotkey, REPEAT_ESCAPE_ID
 from snapclick.record import RecordBorder
+
+REFERENCE_HEIGHT = 40  # real pixels: a few lines, without shrinking the text
+REFERENCE_GAP = 6
+
+
+def reference_strips(frame, image):
+    """Last bottom above the box, last top below it; both stay outside the capture."""
+    height = min(REFERENCE_HEIGHT, image.height())
+    width = image.width()
+    return [
+        (QRect(frame.x(), frame.y() - REFERENCE_GAP - height, width, height),
+         image.copy(0, image.height() - height, width, height)),
+        (QRect(frame.x(), frame.y() + frame.height() + REFERENCE_GAP, width, height),
+         image.copy(0, 0, width, height)),
+    ]
+
+
+class RepeatBorder(RecordBorder):
+    """Reuse the passive border window for two small, static reference strips."""
+
+    def __init__(self, frame, screen, references):
+        self.references = references
+        super().__init__(frame, screen, color=ACCENT)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        scale = self.area.width() / self.width()
+        painter.scale(1 / scale, 1 / scale)
+        painter.translate(-self.area.topLeft())
+        # The window clips at monitor edges; no strip is moved inside the box.
+        painter.setPen(QPen(ACCENT, 1))
+        for rect, image in self.references:
+            painter.drawImage(rect.topLeft(), image)
+            painter.drawRect(rect.adjusted(-1, -1, 0, 0))
+        painter.end()
 
 
 class RepeatArea(QObject):
@@ -18,7 +54,8 @@ class RepeatArea(QObject):
         self.frame = QRect(frame)
         self.pieces = [first.copy()]
         self.closed = False
-        self.borders = [RecordBorder(self.frame, screen, color=ACCENT) for screen in QGuiApplication.screens()]
+        references = reference_strips(self.frame, first)
+        self.borders = [RepeatBorder(self.frame, screen, references) for screen in QGuiApplication.screens()]
         self.windows = self.borders + other_windows
         self.excluded = all([exclude_from_capture(w) for w in self.windows])
         # Finish outside the native filter callback so it can safely unregister itself.
@@ -52,6 +89,10 @@ class RepeatArea(QObject):
             for window, opacity in hidden:
                 window.setWindowOpacity(opacity)
         self.pieces.append(piece)
+        references = reference_strips(self.frame, piece)
+        for border in self.borders:
+            border.references = references
+            border.update()
         self.changed.emit()
 
     def finish(self):

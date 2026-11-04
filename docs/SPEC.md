@@ -258,10 +258,20 @@ Example: image 1 has lines 1–20; image 2 has 11–30 → the result contains 1
 
 Only read the screen when adding an image. There are no periodic screen reads, scroll tracking or overlap checks. Lines skipped between keypresses cannot be recovered: 1–20 followed by 61–80 will not include 21–60.
 
+### Light reference strips
+
+*(Owner approved after testing step 2.)* Show two small static references to help line up the next capture by eye:
+
+- Above the dashed box: the **bottom** few lines of the last captured image, for scrolling down.
+- Below the dashed box: the **top** few lines of the last captured image, for scrolling up.
+- Each strip is at most 40 real pixels high, at the original image scale, with a thin amber outline and a 6 px gap from the box. Clip at monitor edges; never move a strip inside the capture rectangle.
+- Reuse the existing click-through border windows. No extra controls, windows, screen reads, timers, text matching or scroll tracking. Update the strips only when entering the mode or after a new capture, using pixels already captured.
+- Leave strips out of captures with the same exclusion/fallback as the border. Esc or Finish removes them with the border. They are references, not a tracked indication of what is currently visible; captures still append in capture order, including repeats.
+
 ### Preview, clipboard and files
 
 - The preview stays open while active, shows the joined image and image count, and offers **Finish** and **Retake**. Hide Add below, Repeat area, Draw and Save while active.
-- The clipboard holds the joined image after each addition. Leave Snapclick's border and preview out of screen reads using §6's capture-exclusion rule and hide-for-the-read fallback.
+- The clipboard holds the joined image after each addition. Leave Snapclick's border, reference strips and preview out of screen reads using §6's capture-exclusion rule and hide-for-the-read fallback.
 - Reuse Stack's finishing behavior: release the temporary Esc hotkey, start the normal preview timer, and let Draw and Save act on the final joined image. Add below and Repeat area stay hidden for this finished capture.
 - Use screenshot auto-save, save folder and PNG/JPG settings. Auto-save writes only the final joined image once. Entering the mode removes any earlier auto-saved file for image 1, as Stack does, so the final joined file replaces it.
 - Retake while active removes only the last added image. With only image 1 left, use normal Retake. After finishing, normal Retake undoes the joined capture. Restore the previous clipboard only if nothing newer was copied; delete any file saved for this capture.
@@ -271,12 +281,13 @@ Only read the screen when adding an image. There are no periodic screen reads, s
 
 1. **Preview icon, fixed border and Esc.** From a normal screenshot, Repeat area shows the fixed border over the live screen. The preview stays open with **Finish**. Scroll and click normally; Esc or Finish closes the border and keeps image 1. In this first build, PrtSc does not add images yet, and finishing restores the original single-shot preview and any saved file unchanged. Active Retake and final saving integration come in step 3. *Owner test: capture → Repeat area → scroll both ways, click and type → Esc → paste still shows image 1.*
 2. **PrtSc adds full images.** Append the whole fixed box on each press; update the clipboard and image-count preview. Esc finishes. *Owner test: three captures, including scrolling up and repeated content; paste shows every full image in capture order.*
+2b. **Light reference strips.** Show the last capture's bottom edge above the box and top edge below it, without tracking or extra screen reads. *Owner test: scroll both ways using the strips as references; PrtSc updates them; paste has no strips; Esc removes them.*
 3. **Save, Draw and Retake.** Add the final saving/editing behavior and active Retake rules above. *Owner test: auto-save produces one joined file; Draw edits it; Retake removes the last image while active and preserves a newer clipboard copy.*
 4. **README and fake-content demo GIF.** Ask first. No release without the owner's request.
 
 ### Status
 
-Spec approved. Build step 1 next. No step is confirmed until the owner tests it on their PC and says yes.
+The owner confirmed steps 1 and 2 on their PC, then approved light reference strips. Build step 2b next. No step is confirmed until the owner tests it on their PC and says yes.
 
 
 ## 3. Tray

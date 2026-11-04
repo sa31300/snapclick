@@ -1,12 +1,13 @@
 # Next steps
 
-## Current priority: Repeat area step 2
+## Current priority: Repeat area step 2b — light reference strips
 
 The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the recording README and demo GIF in this chat.
 
 - The owner approved this specification. It is now in [SPEC.md §2e](SPEC.md#2e-repeat-area--full-captures-of-one-fixed-rectangle).
-- The owner confirmed step 1 on their PC: preview icon, fixed border and Esc/Finish.
-- Build only step 2: PrtSc appends full images, with a joined clipboard image and count preview. Save, Draw and Retake integration stay in step 3. Stop for the owner's PC test and OK.
+- The owner confirmed steps 1 and 2 on their PC: fixed border, Esc/Finish and PrtSc appending full images in capture order.
+- The owner approved light reference strips: last bottom lines above the box, last top lines below it. Use existing captured pixels and border windows; no tracking, extra screen reads or timers.
+- Build only step 2b. Save, Draw and Retake integration stay in step 3. Stop for the owner's PC test and OK.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Approved: capture a fixed rectangle by pressing a key
@@ -30,7 +31,7 @@ Only read the screen when adding an image. For example, capturing lines 1–20 a
 ### Agreed finishing rules
 
 - Needs **Show preview after capture** on, because the new icon lives on the normal screenshot preview. Place it between Add below and Draw. Hide it for recordings and finished stacks.
-- The live screen stays clear and usable: only the fixed dashed amber rectangle is overlaid, with no dim layer. Mouse clicks, wheel, touchpad and ordinary typing go to the underlying app. Right-click keeps its normal app behavior.
+- The live screen stays clear and usable: a fixed dashed amber rectangle and two thin reference strips outside it, with no dim layer. Mouse clicks, wheel, touchpad and ordinary typing go to the underlying app. Right-click keeps its normal app behavior.
 - Each added image has the first image's real-pixel width and height. Join full images vertically, without resizing or gaps. Leave Snapclick's border and preview out of the screen read. Handle held PrtSc as a single press, as today.
 - Reuse Stack's result handling: the clipboard holds the joined image after each addition; the preview stays open, shows the image count, and offers Finish and Retake while active.
 - Finish through Esc or the preview's Finish button. Release the temporary Esc hotkey and start the normal preview timer. Draw and Save work on the final joined image.
@@ -43,6 +44,7 @@ These rules do not change existing capture modes or authorize overlap removal.
 
 1. **Preview icon, fixed border and Esc**: start from a normal screenshot; the new icon shows the border over the live screen. Scroll and click in the app normally. Esc closes the border and keeps image 1. No repeated captures yet. Stop for the owner's test.
 2. **PrtSc adds full images**: append the entire fixed box on each press, update the clipboard and image-count preview, then finish with Esc. Test three captures, including scrolling up and repeated content. Stop for the owner's test.
+2b. **Light reference strips**: last bottom lines above the box, last top lines below it. Update only from captured pixels. Test scrolling both ways, refresh after PrtSc, clean pasted images and removal with Esc. Stop for the owner's test.
 3. **Save, Draw and Retake**: verify the final joined file and editing; Retake removes the last image while active and preserves newer clipboard copies. Stop for the owner's test.
 4. **README and fake-content demo GIF**: ask first. No release without a request.
 

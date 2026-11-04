@@ -9,13 +9,14 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QMimeData, QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from snapclick import settings
 from snapclick.capture import ACCENT
 from snapclick.hotkey import REPEAT_ESCAPE_ID
+from snapclick.repeat_area import reference_strips
 from snapclick.tray import Tray
 
 app = QApplication.instance() or QApplication([])
@@ -108,6 +109,79 @@ class RepeatAreaTest(unittest.TestCase):
         self.tray.preview.leaveEvent(None)
         self.assertFalse(self.tray.preview.timer.isActive())
         self.clipboard.setImage.assert_not_called()
+
+    def test_reference_strips_show_last_bottom_above_and_last_top_below_at_original_size(self):
+        top, bottom = QColor("#6A283D"), QColor("#305C6F")
+        painter = QPainter(self.first)
+        painter.fillRect(0, 0, 160, 40, top)
+        painter.fillRect(0, 60, 160, 40, bottom)
+        painter.end()
+        self.capture()
+        session = self.start()
+        self.assertEqual(len(session.windows), len(app.screens()) + 1)  # reuse border windows + preview
+        for border in session.borders:
+            above, below = border.references
+            self.assertEqual(above[1], self.first.copy(0, 60, 160, 40))
+            self.assertEqual(below[1], self.first.copy(0, 0, 160, 40))
+            self.assertEqual(above[0].size(), above[1].size())
+            self.assertEqual(below[0].size(), below[1].size())
+            self.assertFalse(above[0].intersects(self.frame))
+            self.assertFalse(below[0].intersects(self.frame))
+        rendered = session.borders[0].grab().toImage()
+        self.assertEqual(rendered.pixelColor(120, 25), bottom)
+        self.assertEqual(rendered.pixelColor(120, 180), top)
+        self.assertEqual(rendered.pixelColor(120, 110).alpha(), 0)  # live box stays clear
+        self.read.assert_not_called()
+
+    def test_reference_strips_refresh_only_after_capture_and_never_enter_joined_image(self):
+        self.capture()
+        session = self.start()
+        references = session.borders[0].references
+        app.processEvents()
+        self.assertIs(session.borders[0].references, references)
+        self.assertEqual(session.findChildren(QTimer), [])
+        self.read.assert_not_called()
+        second = self.first.copy()
+        second.fill(QColor("#6A283D"))
+        self.read.side_effect = [second]
+        self.tray.start_capture()
+        for border in session.borders:
+            self.assertEqual(border.references[0][1], second.copy(0, 60, 160, 40))
+            self.assertEqual(border.references[1][1], second.copy(0, 0, 160, 40))
+        joined = self.clipboard.setImage.call_args.args[0]
+        self.assertEqual(joined.width(), 160)
+        self.assertEqual(joined.height(), 200)
+        self.assertEqual(joined.copy(0, 0, 160, 100), self.first)
+        self.assertEqual(joined.copy(0, 100, 160, 100), second)
+        app.processEvents()
+        self.read.assert_called_once_with(self.frame)
+        session.finish()
+        self.assertTrue(all(not b.isVisible() for b in session.borders))
+
+    def test_reference_strips_for_small_capture_at_negative_coordinates_do_not_resize(self):
+        frame = QRect(-600, -100, 3, 12)
+        image = QImage(3, 12, QImage.Format.Format_RGB32)
+        image.fill(QColor("#305C6F"))
+        above, below = reference_strips(frame, image)
+        self.assertEqual(above[1], image)
+        self.assertEqual(below[1], image)
+        for rect, picture in (above, below):
+            self.assertEqual(rect.size(), picture.size())
+            self.assertFalse(rect.intersects(frame))
+            self.assertEqual(rect.left(), frame.left())
+        self.assertLess(above[0].bottom(), frame.top())
+        self.assertGreater(below[0].top(), frame.bottom())
+
+    def test_strip_at_screen_edge_is_clipped_instead_of_moved_inside_capture(self):
+        self.frame.moveTop(2)
+        self.capture()
+        session = self.start()
+        border = session.borders[0]
+        above, _ = border.references
+        self.assertLess(above[0].bottom(), border.area.top())
+        rendered = border.grab().toImage()
+        self.assertEqual(rendered.pixelColor(120, 40).alpha(), 0)
+        self.assertFalse(above[0].intersects(self.frame))
 
     def test_global_escape_finishes_once_and_restores_first_preview(self):
         self.capture()
