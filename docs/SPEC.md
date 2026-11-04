@@ -50,7 +50,8 @@ Rules:
 | **Save** (only when auto-save is **off**; left of Retake) | arrow into a tray | Button turns baby blue `#8FD3FF` (black icon); label shows the save folder (in baby blue) | Saves the file (same folder, name and format rules as auto-save). Feedback: a quick white flash on the image, the icon turns into a green `#3DDC97` check, one green glow pulse around the button, label shows `saved ✓ <file name>` in green. After that the button stays a green check and does nothing (no duplicate files). |
 | **Retake** | back arrow | Button turns amber `#FFB000` (black icon); the image gets a light amber tint; label shows `retake · undo copy` (in amber) | **Undo and retake** (below) |
 | **Add below** (first button, left of Draw) | square with a plus under it | Button turns `#E7E7E4` (black icon); label shows `add below · start a stack` (in `#E7E7E4`) | Starts a **Stack** (§2b) |
-| **Draw** (between Add below and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the draw window (§2c) |
+| **Repeat area** (between Add below and Draw) | two overlapping rectangles | Button turns `#E7E7E4` (black icon); label shows `repeat area · keep this box` | Starts **Repeat area** (§2e) |
+| **Draw** (between Repeat area and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the draw window (§2c) |
 
 - **Undo and retake**:
   1. Restores the clipboard to what it was before this capture (only if nothing else was copied since — never overwrite a newer copy).
@@ -174,9 +175,9 @@ Needs **Show preview after capture** on: the Draw button lives on the preview. N
 
 | Button | Icon | Hover | Click |
 |---|---|---|---|
-| **Draw** (between Add below and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the **draw window** (below) |
+| **Draw** (between Repeat area and Save) | pen | Button turns violet `#B197FC` (black icon); label shows `draw · mark up` (in `#B197FC`) | Opens the **draw window** (below) |
 
-- Button order on the preview: **Add below · Draw · Save · Retake** (Save only when auto-save is off, as today).
+- Button order on the preview: **Add below · Repeat area · Draw · Save · Retake** (Save only when auto-save is off, as today).
 - Shown for a single shot and after a stack is finished. **Hidden while stacking** (like Save and Add below).
 - While the draw window is open, the preview stays open (no 3 s timer). After ✓ done or Esc, the normal 3 s timer starts again.
 
@@ -239,6 +240,44 @@ Known limit: while drawing, dragging past the window's edge does not scroll the 
 8. **README** (How to use + GIF of the draw flow, fake content only). Ask first.
 
 **No release** until the owner has tested Draw on their own PC and said yes.
+
+## 2e. Repeat area — full captures of one fixed rectangle
+
+*(Approved by the owner on 2026-11-04.)* Start with a normal screenshot, then keep capturing the same screen rectangle with PrtSc. Join the full images vertically, in capture order. **Keep repeated content: no overlap removal or matching.**
+
+### Flow
+
+1. **PrtSc**, two corners → image 1, as in §1. Needs **Show preview after capture** on.
+2. On the normal screenshot preview, click **Repeat area**: two overlapping rectangles, between Add below and Draw. Hover: `#E7E7E4` background, black icon, label `repeat area · keep this box` in `#E7E7E4`. Hide this button for recordings, finished stacks and finished Repeat area captures.
+3. Show the original rectangle's full **1 px dashed amber** perimeter over the live screen. Its real-pixel position and size stay fixed. All four edges are shown; no dim layer or frozen screen while this mode is active.
+4. Scroll up or down, click and type normally in the underlying app. The border is click-through and does not take keyboard focus. Right-click keeps its normal app behavior.
+5. Each **PrtSc** captures the entire fixed rectangle again and appends the full image below the earlier images. Same width and height as image 1, no resizing, gaps or separators. Holding PrtSc counts as one press, as today.
+6. **Esc** or **Finish** on the preview ends the mode and keeps every image. Outside this mode, PrtSc takes a normal screenshot and Insert starts recording, as before.
+
+Example: image 1 has lines 1–20; image 2 has 11–30 → the result contains 1–20 followed by 11–30, including the repeated lines. Scrolling upward still appends below, in capture order. An unchanged rectangle can be captured again too.
+
+Only read the screen when adding an image. There are no periodic screen reads, scroll tracking or overlap checks. Lines skipped between keypresses cannot be recovered: 1–20 followed by 61–80 will not include 21–60.
+
+### Preview, clipboard and files
+
+- The preview stays open while active, shows the joined image and image count, and offers **Finish** and **Retake**. Hide Add below, Repeat area, Draw and Save while active.
+- The clipboard holds the joined image after each addition. Leave Snapclick's border and preview out of screen reads using §6's capture-exclusion rule and hide-for-the-read fallback.
+- Reuse Stack's finishing behavior: release the temporary Esc hotkey, start the normal preview timer, and let Draw and Save act on the final joined image. Add below and Repeat area stay hidden for this finished capture.
+- Use screenshot auto-save, save folder and PNG/JPG settings. Auto-save writes only the final joined image once. Entering the mode removes any earlier auto-saved file for image 1, as Stack does, so the final joined file replaces it.
+- Retake while active removes only the last added image. With only image 1 left, use normal Retake. After finishing, normal Retake undoes the joined capture. Restore the previous clipboard only if nothing newer was copied; delete any file saved for this capture.
+- This is a separate mode from Stack (§2b): its fixed full rectangle and full-image appends do not change Stack's guides, scrolling or matching rules.
+
+### Build steps — one at a time, stop after each
+
+1. **Preview icon, fixed border and Esc.** From a normal screenshot, Repeat area shows the fixed border over the live screen. The preview stays open with **Finish**. Scroll and click normally; Esc or Finish closes the border and keeps image 1. In this first build, PrtSc does not add images yet, and finishing restores the original single-shot preview and any saved file unchanged. Active Retake and final saving integration come in step 3. *Owner test: capture → Repeat area → scroll both ways, click and type → Esc → paste still shows image 1.*
+2. **PrtSc adds full images.** Append the whole fixed box on each press; update the clipboard and image-count preview. Esc finishes. *Owner test: three captures, including scrolling up and repeated content; paste shows every full image in capture order.*
+3. **Save, Draw and Retake.** Add the final saving/editing behavior and active Retake rules above. *Owner test: auto-save produces one joined file; Draw edits it; Retake removes the last image while active and preserves a newer clipboard copy.*
+4. **README and fake-content demo GIF.** Ask first. No release without the owner's request.
+
+### Status
+
+Spec approved. Build step 1 next. No step is confirmed until the owner tests it on their PC and says yes.
+
 
 ## 3. Tray
 
