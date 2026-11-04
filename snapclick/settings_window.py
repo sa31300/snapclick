@@ -84,7 +84,7 @@ class SettingsWindow(QWidget):
         # Auto-save
         self.auto_save = Toggle(self.prefs["auto_save"])
         self.auto_save.toggled.connect(lambda on: self.set("auto_save", on))
-        self.add_row(rows, "Auto-save each capture", self.auto_save)
+        self.add_row(rows, "Auto-save screenshots", self.auto_save)
 
         # Save folder: text + Browse
         self.folder = QLineEdit(self.prefs["save_folder"])
@@ -121,7 +121,13 @@ class SettingsWindow(QWidget):
         chip.setObjectName("chip")
         chip.setFixedHeight(26)  # room for the mono text plus padding at any scaling
         chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.add_row(rows, "Hotkey", chip)
+        self.add_row(rows, "Hotkey · screenshot", chip)
+
+        record_chip = QLabel("Insert")
+        record_chip.setObjectName("chip")
+        record_chip.setFixedHeight(26)
+        record_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.add_row(rows, "Hotkey · recording", record_chip)
 
         # Preview
         preview = Toggle(self.prefs["show_preview"])
@@ -138,6 +144,23 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
         layout.addWidget(title)
         layout.addWidget(panel)
+
+        recording_title = QLabel("Recording")
+        recording_title.setObjectName("title")
+        layout.addWidget(recording_title)
+        recording_panel = QFrame()
+        recording_panel.setObjectName("panel")
+        recording_rows = QVBoxLayout(recording_panel)
+        recording_rows.setContentsMargins(14, 6, 14, 6)
+        recording_rows.setSpacing(0)
+        self.record_frames = self.choices("record_frames", (8, 12, 16))
+        self.add_row(recording_rows, "Frames per sheet", self.record_frames)
+        self.record_max_length = self.choices("record_max_length", (15, 30, 60), " s")
+        self.add_row(recording_rows, "Max recording length", self.record_max_length)
+        self.auto_save_recordings = Toggle(self.prefs["auto_save_recordings"])
+        self.auto_save_recordings.toggled.connect(lambda on: self.set("auto_save_recordings", on))
+        self.add_row(recording_rows, "Auto-save recordings", self.auto_save_recordings, last=True)
+        layout.addWidget(recording_panel)
         hint = QLabel("Changes are saved automatically.")
         hint.setObjectName("muted")
         layout.addWidget(hint)
@@ -145,6 +168,19 @@ class SettingsWindow(QWidget):
         self.update_file_name()
         self.setFixedWidth(380)
         self.setFixedHeight(self.sizeHint().height())
+
+    def choices(self, key, values, suffix=""):
+        row = QHBoxLayout()
+        row.setSpacing(0)
+        group = QButtonGroup(self)
+        for value in values:
+            button = QPushButton(f"{value}{suffix}")
+            button.setCheckable(True)
+            button.setChecked(self.prefs[key] == value)
+            button.clicked.connect(lambda _, v=value: self.set(key, v))
+            group.addButton(button)
+            row.addWidget(button)
+        return row
 
     def add_row(self, rows, text, control, stacked=False, last=False):
         """One setting: label on the left, control on the right (or below)."""

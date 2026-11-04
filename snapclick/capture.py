@@ -45,6 +45,41 @@ user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
 user32.SetWindowDisplayAffinity.argtypes = [wintypes.HWND, wintypes.DWORD]
 
 
+class CURSORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("hCursor", wintypes.HICON), ("ptScreenPos", wintypes.POINT)]
+
+
+class ICONINFO(ctypes.Structure):
+    _fields_ = [("fIcon", wintypes.BOOL), ("xHotspot", wintypes.DWORD), ("yHotspot", wintypes.DWORD),
+                ("hbmMask", wintypes.HBITMAP), ("hbmColor", wintypes.HBITMAP)]
+
+
+user32.GetCursorInfo.argtypes = [ctypes.POINTER(CURSORINFO)]
+user32.GetIconInfo.argtypes = [wintypes.HICON, ctypes.POINTER(ICONINFO)]
+user32.DrawIconEx.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
+                             ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH, wintypes.UINT]
+
+
+def draw_cursor(dc, origin):
+    """Paint the current Windows pointer into a recording frame, at its real hotspot."""
+    cursor = CURSORINFO()
+    cursor.cbSize = ctypes.sizeof(cursor)
+    if not user32.GetCursorInfo(ctypes.byref(cursor)) or not cursor.flags & 1:  # CURSOR_SHOWING
+        return
+    icon = ICONINFO()
+    if not user32.GetIconInfo(cursor.hCursor, ctypes.byref(icon)):
+        return
+    try:
+        x = cursor.ptScreenPos.x - origin.x() - icon.xHotspot
+        y = cursor.ptScreenPos.y - origin.y() - icon.yHotspot
+        user32.DrawIconEx(dc, x, y, cursor.hCursor, 0, 0, 0, None, 3)  # DI_NORMAL
+    finally:
+        for bitmap in (icon.hbmMask, icon.hbmColor):
+            if bitmap:
+                gdi32.DeleteObject(bitmap)
+
+
 def grab_desktop():
     """Screenshot of the whole virtual desktop in real pixels. Returns (image, origin)."""
     x, y = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)  # SM_X/YVIRTUALSCREEN
@@ -52,7 +87,7 @@ def grab_desktop():
     return grab(QRect(x, y, w, h)), QPoint(x, y)
 
 
-def grab(rect):
+def grab(rect, include_cursor=False):
     """Screenshot of one area of the desktop (real pixels), as it is now."""
     x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
     screen_dc = user32.GetDC(None)
@@ -60,6 +95,8 @@ def grab(rect):
     bitmap = gdi32.CreateCompatibleBitmap(screen_dc, w, h)
     old = gdi32.SelectObject(mem_dc, bitmap)
     gdi32.BitBlt(mem_dc, 0, 0, w, h, screen_dc, x, y, 0x00CC0020 | 0x40000000)  # SRCCOPY | CAPTUREBLT
+    if include_cursor:
+        draw_cursor(mem_dc, rect.topLeft())
 
     # BITMAPINFOHEADER: 32-bit, top-down (negative height)
     header = (ctypes.c_uint32 * 10)(40, w, ctypes.c_uint32(-h).value, 1 | (32 << 16), 0, 0, 0, 0, 0, 0)

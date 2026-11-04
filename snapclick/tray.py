@@ -157,7 +157,14 @@ class Tray(QSystemTrayIcon):
             self.stack.finish()
         self.close_preview()
         self.recording = Record()
+        self.recording.recorded.connect(self._recorded)
         self.recording.finished.connect(self._record_done)
+
+    def _recorded(self, image, count, elapsed):
+        QGuiApplication.clipboard().setImage(image)
+        prefs = self.recording.prefs
+        if prefs["auto_save_recordings"]:
+            self.save_image(image, dict(prefs, format="png"), prefix="rec_")
 
     def _record_done(self):
         self.recording = None
@@ -306,12 +313,12 @@ class Tray(QSystemTrayIcon):
         except OSError:
             pass  # already gone or locked: nothing more to do
 
-    def save_image(self, image, prefs):
+    def save_image(self, image, prefs, prefix=""):
         """Save to the save folder. Returns the file path, or None if it failed."""
         try:
             folder = Path(prefs["save_folder"])
             folder.mkdir(parents=True, exist_ok=True)
-            path = settings.new_file_path(folder, prefs["format"])
+            path = settings.new_file_path(folder, prefs["format"], prefix=prefix)
             ok = write_image(path, image)
         except OSError:
             ok = False

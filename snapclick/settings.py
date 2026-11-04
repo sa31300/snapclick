@@ -23,6 +23,9 @@ DEFAULTS = {
     "show_preview": False,
     "start_with_windows": False,
     "hotkey": DEFAULT_HOTKEY,  # fixed to PrtSc (see load)
+    "record_frames": 12,
+    "record_max_length": 30,
+    "auto_save_recordings": False,
 }
 
 
@@ -34,6 +37,9 @@ def load():
     except (OSError, ValueError):
         pass
     settings["hotkey"] = DEFAULT_HOTKEY  # the hotkey is not editable; ignore any saved one
+    for key, choices in (("record_frames", (8, 12, 16)), ("record_max_length", (15, 30, 60))):
+        if type(settings[key]) is not int or settings[key] not in choices:
+            settings[key] = DEFAULTS[key]
     return settings
 
 
@@ -47,9 +53,9 @@ def file_name(when, fmt):
     return when.strftime("%Y-%m-%d_%H-%M-%S") + "." + fmt
 
 
-def new_file_path(folder, fmt, when=None):
+def new_file_path(folder, fmt, when=None, prefix=""):
     """A free file path in `folder`; adds _2, _3 if the second is already taken."""
-    stem = Path(file_name(when or datetime.now(), fmt)).stem
+    stem = prefix + Path(file_name(when or datetime.now(), fmt)).stem
     path = Path(folder) / f"{stem}.{fmt}"
     n = 2
     while path.exists():
