@@ -8,6 +8,8 @@
 
 **[Download Snapclick.exe](https://github.com/sa31300/snapclick/releases/latest/download/Snapclick.exe)** (Windows 10/11, no install, no Python needed)
 
+Recording is available in [source builds](#build-from-source); it is not in the published release yet.
+
 The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
 
 Some antivirus tools may flag Snapclick because it listens for the PrtSc key, reads the clipboard and screen, and (for long captures) passes the mouse wheel on to the window under it. The source code is open for review.
@@ -51,7 +53,25 @@ Point at something before you share it: arrows, boxes, highlights, notes, blur a
 2. Pick a tool: **arrow**, **box**, **mark** (yellow highlight), **text**, **blur** (big square pixels, so text can't be read back) or **step** (1, 2, 3…). Pick a color: red, blue or green. **Undo** removes the last one.
 3. Click **✓ done** or press **Enter**. The clipboard now holds the picture with your drawings. **Esc** closes without changes.
 
-Works after a long capture too: scroll inside the window to draw on the whole tall picture. If the capture was already saved, the file gets the drawings too. Click **Draw** again to change them.
+Works after a long capture or on a recording's PNG sheet too: scroll inside the window to draw on the whole picture. If the capture was already saved, the file gets the drawings too. Click **Draw** again to change them.
+
+### Record a short flow
+
+Show a sequence of actions in one image: Snapclick turns a short screen recording into a **numbered PNG frame sheet**, ready to paste into an AI chat. Recording currently needs a source build. **PNG only for now; MP4 is planned.**
+
+![Snapclick recording demo with fake data: Insert, select, Record, Stop, then paste the numbered PNG sheet](docs/record.gif)
+
+1. Press **Insert** (or right-click the tray icon → **Record**) and click two corners of the area.
+2. Click **▶ record**, work inside the area, then click **■ stop** or press **Esc**. The timer stops automatically at the maximum length.
+3. Paste the PNG sheet with **Ctrl+V** into an AI chat, Paint or Word.
+
+The sheet has four columns, numbered frames and times. It skips unchanged frames and keeps the first and last moments. The pointer is included; a brief amber circle marks a detected left click. Only the selected area is recorded, with no sound.
+
+With **Show preview after capture** on, the thumbnail offers **Draw**, **Save** (when Auto-save recordings is off) and **Retake**. Hover over it to keep it open. **Retake** deletes the saved recording sheet, restores the previous clipboard if nothing newer was copied, and starts a new recording selection.
+
+**Auto-save recordings** is separate from screenshots and starts off. When on, the sheet is saved in the save folder as `rec_YYYY-MM-DD_HH-MM-SS.png`. With it off, the sheet goes to the clipboard; use the preview's Save button to save it. Recordings always use PNG, even when screenshot format is JPG.
+
+While Snapclick runs, **Insert** is reserved for recording and no longer toggles overwrite mode in other apps. If another app holds Insert, Snapclick explains this once; Record still works from the tray menu.
 
 > If PrtSc opens the Windows Snipping Tool instead, turn it off in
 > *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
@@ -63,13 +83,17 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 
 | Setting | Default |
 |---|---|
-| Auto-save each capture | Off (in a long capture, only the final joined image is saved) |
+| Auto-save screenshots | Off (in a long capture, only the final joined image is saved) |
 | Save folder | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
-| Format | PNG (or JPG) |
-| Hotkey | PrtSc (fixed) |
-| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s (stays while the mouse is on it; Add below, Draw, Save and Retake buttons). Needed for long captures. |
+| Format | PNG (or JPG) for screenshots; recording sheets stay PNG |
+| Hotkey · screenshot | PrtSc (fixed) |
+| Hotkey · recording | Insert (fixed) |
+| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s and stays while hovered. Needed for long captures and for Draw, Save and Retake after a recording. |
 | Start with Windows | Off |
+| Frames per sheet | 12 (choose 8, 12 or 16; fewer when fewer frames changed) |
+| Max recording length | 30 s (choose 15, 30 or 60 s) |
+| Auto-save recordings | Off — separate from screenshot auto-save |
 
 ## Known issues
 
@@ -86,7 +110,7 @@ Key decisions and why:
 - **Python + PySide6 (Qt)** — one toolkit for the tray, the overlay and the settings window; looks the same on every PC.
 - **Freeze first, then select** — the screen is captured the moment you press PrtSc, so menus and tooltips don't vanish while you aim.
 - **All math in real pixels** — correct on 125%/150% scaled screens and across two monitors with different scaling. Lines are drawn in real pixels too, so they stay sharp.
-- **Win32 `RegisterHotKey`** — a global PrtSc hotkey without admin rights or a keyboard hook.
+- **Win32 `RegisterHotKey`** — global PrtSc and Insert hotkeys without admin rights or a keyboard hook.
 - **Settings save instantly, no Save button** — fewer clicks, nothing to forget.
 - **Fonts bundled** (JetBrains Mono, IBM Plex Sans, both OFL) — the design looks the same even if they aren't installed.
 - **One `.exe` with PyInstaller** — download and run, nothing to install.
@@ -105,6 +129,13 @@ For **Draw**, a mockup GIF came first ([`docs/design/annotations-flow.gif`](docs
 - **Drawings stay a list of shapes** until you paste — so undo works, and Draw again can still change them. They are painted onto the picture in real pixels only at the end.
 - **Blur is big square pixels**, not a soft blur: each square is the average color under it, so text can't be read back.
 
+For **Record**, the approved [spec and reference GIF](docs/SPEC.md#2d-record--short-screen-recordings) came first. The PNG flow was then built in separate steps, tested by the owner on their PC:
+
+- **PNG sheets first** — one image can show an AI chat the sequence; MP4 can be added later without delaying this flow.
+- **About 5 frames per second, then skip duplicates and choose evenly** — keep the first and last moments and limit the sheet to 2400 px on its longest side. Frames are kept at sheet resolution to limit memory use.
+- **Pointer and click circles without mouse hooks** — the left button is polled only while recording. Click marks were a separate step, tested with Bitdefender on.
+- **Separate recording auto-save** — turning it on never changes the screenshot setting. Draw and Retake reuse the capture workflow.
+
 ### Build from source
 
 Use Python 3.12 from [python.org](https://www.python.org/) (Anaconda's Python is too old for Qt 6.12).
@@ -116,6 +147,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m unittest discover tests   # tests
 .venv\Scripts\python build.py           # make dist\Snapclick.exe
 .venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif, docs/stack.gif and docs/draw.gif
+.venv\Scripts\python tools\make_record_gif.py # remake docs/record.gif (fake content only)
 ```
 
 ## License

@@ -1,12 +1,11 @@
 # Next steps
 
-## Current priority: finish the PNG recording flow
+## Current priority: review the PNG recording documentation
 
-The owner confirmed Record steps 1, 2 and 2b on their PC in this chat.
+The owner confirmed Record steps 1, 2, 2b and 3 on their PC in this chat.
 
-- Build step 3 from [SPEC.md §2d](SPEC.md#2d-record--short-screen-recordings): preview, Draw, Save and Retake for the PNG sheet.
-- Stop for the owner's test and OK before another build step.
-- MP4 is phase 2 and still needs the owner's explicit go-ahead. The recording README/GIF step also needs approval.
+- The owner approved the recording README/GIF step. Review the new instructions and `docs/record.gif` (fake content only), then stop for the owner's OK.
+- MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Parked idea: capture a fixed rectangle by pressing a key
 
