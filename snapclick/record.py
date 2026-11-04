@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 from snapclick import settings
 from snapclick.capture import (Capture, DIM, Overlay, draw_magnifier, exclude_from_capture,
                                grab, magnifier_reach, physical_rect)
+from snapclick.clicks import ClickMarks
 from snapclick.frames import FrameBuffer, clock_text, make_sheet
 from snapclick.hotkey import GlobalHotkey, RECORD_ESCAPE_ID
 
@@ -201,6 +202,7 @@ class Record(QObject):
         self.escape = None
         self.running = False
         self.buffer = None
+        self.clicks = None
         self.timer = QTimer(self)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.tick)
@@ -227,6 +229,7 @@ class Record(QObject):
         self.buffer = FrameBuffer(self.frame.size(), self.prefs["record_frames"])
         self.started = time.monotonic()
         self.running = True
+        self.clicks = ClickMarks()
         for border in self.borders:
             border.recording = True
             border.update()
@@ -246,6 +249,7 @@ class Record(QObject):
             if not self.excluded:
                 for window in windows:
                     window.setWindowOpacity(1)
+        self.clicks.draw(image, self.frame, elapsed)
         self.buffer.add(image, elapsed, final=final)
 
     def tick(self):
@@ -281,6 +285,7 @@ class Record(QObject):
 
     def close_windows(self):
         self.closed = True
+        self.clicks = None
         self.timer.stop()
         if self.escape:
             self.escape.close()

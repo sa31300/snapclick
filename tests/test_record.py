@@ -44,6 +44,9 @@ class RecordSelectionTest(unittest.TestCase):
         mock = patch("snapclick.capture.save_clipboard", side_effect=AssertionError("clipboard touched"))
         mock.start()
         self.addCleanup(mock.stop)
+        mock = patch("snapclick.clicks.user32.GetAsyncKeyState", return_value=0)
+        mock.start()
+        self.addCleanup(mock.stop)
 
     def test_corners_in_every_direction(self):
         for a, b in ((QPoint(10, 20), QPoint(110, 80)), (QPoint(110, 80), QPoint(10, 20)),
@@ -157,6 +160,23 @@ class RecordSelectionTest(unittest.TestCase):
             session.tick()
         self.assertTrue(session.closed)
         self.assertEqual(recorded[0][1:], (2, 15))
+
+    @patch("snapclick.record.GlobalHotkey")
+    @patch("snapclick.clicks.user32.GetAsyncKeyState", return_value=0)
+    def test_mouse_button_is_polled_only_while_recording(self, mouse_state, hotkey):
+        session = Record()
+        session.selection.click(QPoint(10, 20))
+        session.selection.click(QPoint(210, 150))
+        mouse_state.assert_not_called()
+        with patch("snapclick.record.time.monotonic", return_value=100):
+            session.start()
+        self.assertEqual(mouse_state.call_count, 2)  # initialize, then read the first frame
+        with patch("snapclick.record.time.monotonic", return_value=101):
+            session.stop()
+        self.assertEqual(mouse_state.call_count, 3)  # the final frame
+        session.close()
+        self.assertEqual(mouse_state.call_count, 3)
+        self.assertIsNone(session.clicks)
 
 
 class FrameSheetTest(unittest.TestCase):
