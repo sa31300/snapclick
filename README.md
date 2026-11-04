@@ -8,7 +8,7 @@
 
 **[Download Snapclick.exe](https://github.com/sa31300/snapclick/releases/latest/download/Snapclick.exe)** (Windows 10/11, no install, no Python needed)
 
-Recording is available in [source builds](#build-from-source); it is not in the published release yet.
+Recording and Repeat area are available in [source builds](#build-from-source); they are not in the published release yet.
 
 The `.exe` is not code-signed, so Windows may show *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
 
@@ -22,7 +22,9 @@ Some antivirus tools may flag Snapclick because it listens for the PrtSc key, re
 
 **Esc** or **right-click** cancels. A magnifier next to the cursor helps you hit the exact pixel.
 With the preview on, the thumbnail has these buttons:
+
 - **Add below** (square with a plus): starts a long capture, see below.
+- **Repeat area** (two overlapping rectangles): keeps the box fixed so PrtSc can add more full images, see below.
 - **Draw** (pen): mark up the picture before you paste it, see below.
 - **Save** (arrow into tray, only when auto-save is off): saves this one capture to your save folder.
 - **Retake** (back arrow): undoes the capture (clipboard and saved file) and lets you select again on the same frozen screen.
@@ -43,6 +45,24 @@ For things taller than the screen, like long terminal output. Snapclick joins se
 After every piece, the clipboard holds the whole joined image. **Retake** removes the last piece. With auto-save on, only the final image is saved.
 If you scroll too fast (or drag the scrollbar), Snapclick shows *jumped too far*: scroll back to the striped part and go on.
 
+### Repeat area (fixed rectangle)
+
+Capture the same box again while you scroll and work normally. Requires a source build and **Show preview after capture** on.
+
+![Snapclick Repeat area demo with fake notes: select, Repeat area, scroll down and up, PrtSc adds full images, Esc finishes, then paste](docs/repeat.gif)
+
+1. Press **PrtSc**, click two corners, then click **Repeat area** on the preview. A dashed amber box stays over the live screen.
+2. Scroll up or down, then press **PrtSc** again. Each press adds the whole box below the previous images. Clicking and typing still work normally.
+3. Finish with **Esc** or **✓** on the preview, then paste with **Ctrl+V**. **Draw** and **Save** work on the joined image.
+
+The soft amber strips help you line up the next capture: the last image's **bottom lines appear above** the box, and its **top lines appear below**. They stay still until the next capture and are left out of the result.
+
+**Whole images stay in capture order, including repeated lines.** Scrolling up still adds below. Content skipped between keypresses is not recovered.
+
+While adding, **Retake** removes only the last image. With just image 1 left, it selects again on the original frozen screen. After finishing, Retake undoes the joined capture. It preserves anything newer you copied.
+
+With **Auto-save screenshots** on, only the final joined image is kept, in PNG or JPG. With it off, use **Save** on the finished preview.
+
 ### Draw on a capture
 
 Point at something before you share it: arrows, boxes, highlights, notes, blur and numbered steps.
@@ -53,7 +73,7 @@ Point at something before you share it: arrows, boxes, highlights, notes, blur a
 2. Pick a tool: **arrow**, **box**, **mark** (yellow highlight), **text**, **blur** (big square pixels, so text can't be read back) or **step** (1, 2, 3…). Pick a color: red, blue or green. **Undo** removes the last one.
 3. Click **✓ done** or press **Enter**. The clipboard now holds the picture with your drawings. **Esc** closes without changes.
 
-Works after a long capture or on a recording's PNG sheet too: scroll inside the window to draw on the whole picture. If the capture was already saved, the file gets the drawings too. Click **Draw** again to change them.
+Works after a long capture, Repeat area or on a recording's PNG sheet too: scroll inside the window to draw on the whole picture. If the capture was already saved, the file gets the drawings too. Click **Draw** again to change them.
 
 ### Record a short flow
 
@@ -83,13 +103,13 @@ Right-click the tray icon → **Settings…**. Changes save instantly to `%APPDA
 
 | Setting | Default |
 |---|---|
-| Auto-save screenshots | Off (in a long capture, only the final joined image is saved) |
+| Auto-save screenshots | Off (in a long capture or Repeat area, only the final joined image is kept) |
 | Save folder | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | `YYYY-MM-DD_HH-MM-SS.png` (adds `_2`, `_3` within the same second) |
 | Format | PNG (or JPG) for screenshots; recording sheets stay PNG |
 | Hotkey · screenshot | PrtSc (fixed) |
 | Hotkey · recording | Insert (fixed) |
-| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s and stays while hovered. Needed for long captures and for Draw, Save and Retake after a recording. |
+| Show preview after capture | Off — a thumbnail appears bottom-right for 3 s and stays while hovered. Needed for long captures, Repeat area, and Draw, Save and Retake after a recording. |
 | Start with Windows | Off |
 | Frames per sheet | 12 (choose 8, 12 or 16; fewer when fewer frames changed) |
 | Max recording length | 30 s (choose 15, 30 or 60 s) |
@@ -136,6 +156,12 @@ For **Record**, the approved [spec and reference GIF](docs/SPEC.md#2d-record--sh
 - **Pointer and click circles without mouse hooks** — the left button is polled only while recording. Click marks were a separate step, tested with Bitdefender on.
 - **Separate recording auto-save** — turning it on never changes the screenshot setting. Draw and Retake reuse the capture workflow.
 
+For **Repeat area**, the [written spec](docs/SPEC.md#2e-repeat-area--full-captures-of-one-fixed-rectangle) came first, followed by small steps tested by the owner on their PC:
+
+- **Read only on PrtSc** — no scroll tracking or matching. Full images are appended in capture order, with repeated content kept.
+- **Small static references** — the last image's edges are shown in the existing border windows, with a soft amber tint chosen from three previews. They use already captured pixels.
+- **Reuse screenshot saving, Draw and safe Retake** — one final PNG/JPG file, editable drawings, and no overwriting a newer clipboard copy when undoing.
+
 ### Build from source
 
 Use Python 3.12 from [python.org](https://www.python.org/) (Anaconda's Python is too old for Qt 6.12).
@@ -148,6 +174,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\python build.py           # make dist\Snapclick.exe
 .venv\Scripts\python tools\make_demo_gif.py   # remake docs/demo.gif, docs/stack.gif and docs/draw.gif
 .venv\Scripts\python tools\make_record_gif.py # remake docs/record.gif (fake content only)
+.venv\Scripts\python tools\make_repeat_gif.py # remake docs/repeat.gif (fake content only)
 ```
 
 ## License

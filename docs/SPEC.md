@@ -287,7 +287,7 @@ Only read the screen when adding an image. There are no periodic screen reads, s
 
 ### Status
 
-The owner confirmed steps 1, 2 and 2b, including Soft tint, on their PC. Step 3 (Save, Draw and Retake) is the current build and still needs the owner's PC test. README and demo GIF remain a separate step requiring approval.
+The owner confirmed steps 1, 2, 2b (including Soft tint) and 3 (Save, Draw and Retake) on their PC. The owner approved step 4: README and a fake-content demo GIF, now awaiting review. No release is authorized.
 
 
 ## 3. Tray

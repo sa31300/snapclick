@@ -1,6 +1,6 @@
 # Next steps
 
-## Current priority: Repeat area step 3 — Save, Draw and Retake
+## Current priority: Repeat area step 4 — README and demo GIF
 
 The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the recording README and demo GIF in this chat.
 
@@ -8,8 +8,8 @@ The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the r
 - The owner confirmed steps 1 and 2 on their PC: fixed border, Esc/Finish and PrtSc appending full images in capture order.
 - The owner approved light reference strips: last bottom lines above the box, last top lines below it. Use existing captured pixels and border windows; no tracking, extra screen reads or timers.
 - The owner tested the strips and confirmed they work, then chose **Soft tint** from three previews: amber at 18% opacity, with no pattern. Tint only the displayed references, leaving captured pixels unchanged.
-- The owner confirmed Soft tint on their PC and approved step 3.
-- Build only step 3: final saving/editing and safe Retake. Stop for the owner's PC test and OK. README and demo GIF remain a separate step requiring approval.
+- The owner confirmed Soft tint and step 3 (Save, Draw and Retake) on their PC.
+- The owner approved step 4: update the README and add a short demo GIF using fake content. Stop for review after this documentation step.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Approved: capture a fixed rectangle by pressing a key
