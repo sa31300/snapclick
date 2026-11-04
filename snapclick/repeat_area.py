@@ -92,17 +92,31 @@ class RepeatArea(QObject):
             for window, opacity in hidden:
                 window.setWindowOpacity(opacity)
         self.pieces.append(piece)
+        self.update_references()
+        self.changed.emit()
+
+    def update_references(self):
+        piece = self.pieces[-1]
         references = reference_strips(self.frame, piece)
         for border in self.borders:
             border.references = references
             border.update()
-        self.changed.emit()
 
-    def finish(self):
+    def remove_last(self):
+        if not self.closed and self.count() > 1:
+            self.pieces.pop()
+            self.update_references()
+
+    def close(self):
+        """Release the border and hotkey without saving a discarded session."""
         if self.closed:
             return
         self.closed = True
         self.escape.close()
         for border in self.borders:
             border.close()
-        self.finished.emit()
+
+    def finish(self):
+        if not self.closed:
+            self.close()
+            self.finished.emit()

@@ -287,7 +287,7 @@ Only read the screen when adding an image. There are no periodic screen reads, s
 
 ### Status
 
-The owner confirmed steps 1, 2 and the light reference strips on their PC, then chose Soft tint from three previews. Apply that style as the remaining step 2b change, then stop for its PC test. Save, Draw and Retake remain step 3.
+The owner confirmed steps 1, 2 and 2b, including Soft tint, on their PC. Step 3 (Save, Draw and Retake) is the current build and still needs the owner's PC test. README and demo GIF remain a separate step requiring approval.
 
 
 ## 3. Tray

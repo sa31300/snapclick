@@ -234,8 +234,7 @@ class Tray(QSystemTrayIcon):
     def _preview_closed(self):
         if self.repeat_area:
             session, self.repeat_area = self.repeat_area, None
-            session.finished.disconnect(self._repeat_area_finished)
-            session.finish()
+            session.close()
         self.undo = None  # free the frozen screen
         if self.draw_window:  # its picture belongs to this preview
             window, self.draw_window = self.draw_window, None
@@ -297,6 +296,13 @@ class Tray(QSystemTrayIcon):
         if (self.capture or self.recording or self.stack or self.repeat_area or self.draw_window or not self.undo
                 or not self.preview or self.preview.mode != "single"):
             return
+        undo = self.undo
+        if undo["saved_path"]:  # keep only the final joined file, as Stack does
+            self.delete_file(undo["saved_path"])
+            undo["saved_path"] = None
+        # Existing drawings stay in image 1; later Draw starts from the joined picture.
+        undo.pop("draw_base", None)
+        undo.pop("shapes", None)
         self.repeat_area = RepeatArea(self.undo["frame"], self.preview.image, [self.preview])
         self.repeat_area.changed.connect(self._repeat_area_changed)
         self.repeat_area.finished.connect(self._repeat_area_finished)
@@ -313,9 +319,15 @@ class Tray(QSystemTrayIcon):
         self.preview.set_repeat_area(image, self.repeat_area.count())
 
     def _repeat_area_finished(self):
-        self.repeat_area = None
-        if self.preview:
-            self.preview.finish_repeat_area()
+        session, self.repeat_area = self.repeat_area, None
+        image = session.image()
+        prefs = settings.load()
+        saved_path = self.save_image(image, prefs) if prefs["auto_save"] else None
+        self.undo["saved_path"] = saved_path
+        self.preview.can_save = not prefs["auto_save"]
+        self.preview.finish_repeat_area(image, session.count(), saved_path)
+        if prefs["auto_save"] and saved_path is None:
+            self.preview.show_save_failed()
 
     def _stack_changed(self):
         """A piece was added: the clipboard always holds the whole stack."""
@@ -345,6 +357,15 @@ class Tray(QSystemTrayIcon):
         self.undo["clipboard_version"] = clipboard_version()
 
     def undo_and_retake(self):
+        if self.repeat_area and self.repeat_area.count() > 1:
+            self.repeat_area.remove_last()
+            image = self.repeat_area.image()
+            self.copy(image, only_if_ours=True)
+            self.preview.set_repeat_area(image, self.repeat_area.count())
+            return
+        if self.repeat_area:
+            self.repeat_area.close()
+            self.repeat_area = None
         if self.stack and self.stack.count() > 1:  # while stacking: remove only the last piece
             self.stack.remove_last()
             image = self.stack.image()

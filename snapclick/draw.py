@@ -57,6 +57,8 @@ def draw_title(mode, count, image):
         return f"shot · {size}"
     if mode == "recorded":
         return f"recording · {count} {'frame' if count == 1 else 'frames'} · {size}"
+    if mode == "repeated":
+        return f"repeat area · {count} {'image' if count == 1 else 'images'} · {size}"
     return f"stack · {count} {'piece' if count == 1 else 'pieces'} · {size}"
 
 

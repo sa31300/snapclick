@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from snapclick import settings
 from snapclick.capture import ACCENT
+from snapclick.draw import COLORS, draw_title
 from snapclick.hotkey import REPEAT_ESCAPE_ID
 from snapclick.repeat_area import reference_strips
 from snapclick.tray import Tray
@@ -28,6 +29,7 @@ class RepeatAreaTest(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         self.prefs = dict(settings.DEFAULTS, save_folder=str(Path(self.folder.name) / "captures"),
                           show_preview=True)
+        self.version = 100
         for name, options in (
             ("snapclick.settings.SETTINGS_FILE", {"new": Path(self.folder.name) / "settings.json"}),
             ("snapclick.repeat_area.GlobalHotkey", {}),
@@ -40,7 +42,8 @@ class RepeatAreaTest(unittest.TestCase):
             ("snapclick.capture.grab", {"side_effect": AssertionError("unexpected screen read")}),
             ("snapclick.record.grab", {"side_effect": AssertionError("unexpected screen read")}),
             ("snapclick.tray.QGuiApplication.clipboard", {}),
-            ("snapclick.tray.clipboard_version", {"return_value": 101}),
+            ("snapclick.tray.clipboard_version", {"side_effect": lambda: self.version}),
+            ("snapclick.tray.restore_clipboard", {}),
         ):
             mock = patch(name, **options)
             result = mock.start()
@@ -53,8 +56,11 @@ class RepeatAreaTest(unittest.TestCase):
                 self.exclude = result
             elif name.endswith("DwmFlush"):
                 self.flush = result
-            elif name.endswith("clipboard"):
+            elif name.endswith("QGuiApplication.clipboard"):
                 self.clipboard = result.return_value
+                self.clipboard.setImage.side_effect = self.copied_image
+            elif name.endswith("restore_clipboard"):
+                self.restored = result
 
         self.frame = QRect(40, 60, 160, 100)
         self.desktop = QImage(800, 600, QImage.Format.Format_RGB32)
@@ -63,6 +69,7 @@ class RepeatAreaTest(unittest.TestCase):
         self.previous = QMimeData()
         self.previous.setText("demo clipboard")
         self.tray = Tray(app)  # never show a real tray icon
+        self.tray.showMessage = Mock()
         self.tray.theme_timer.stop()
         self.addCleanup(self.cleanup)
 
@@ -70,10 +77,13 @@ class RepeatAreaTest(unittest.TestCase):
         self.tray.close_preview()
         self.tray.hide()
 
+    def copied_image(self, image):
+        self.version += 1
+
     def capture(self, auto_save=False):
         settings.save(dict(self.prefs, auto_save=auto_save))
         self.tray.capture = SimpleNamespace(image=self.desktop, origin=QPoint(), previous_clipboard=self.previous,
-                                            clipboard_version=100, selection=lambda: self.frame)
+                                            clipboard_version=self.version, selection=lambda: self.frame)
         self.tray._captured(self.first)
         self.tray._capture_done()
 
@@ -82,6 +92,26 @@ class RepeatAreaTest(unittest.TestCase):
         QTest.mouseClick(preview, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          preview.buttons["repeat"].center())
         return self.tray.repeat_area
+
+    def click(self, name):
+        preview = self.tray.preview
+        QTest.mouseClick(preview, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                         preview.buttons[name].center())
+
+    def add(self, image=None):
+        self.read.side_effect = None
+        self.read.return_value = image if image is not None else self.first.copy()
+        self.tray.start_capture()
+
+    def draw_box(self):
+        self.click("draw")
+        window = self.tray.draw_window
+        window.canvas.ratio = 1
+        canvas = window.canvas
+        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(20, 120))
+        QTest.mouseMove(canvas, QPoint(120, 170))
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(120, 170))
+        return window
 
     def test_button_order_and_hover(self):
         self.capture()
@@ -104,7 +134,7 @@ class RepeatAreaTest(unittest.TestCase):
             self.assertEqual(image.pixelColor(120, 110).alpha(), 0)
             self.assertEqual(image.pixelColor(10, 10).alpha(), 0)
             self.assertIn(ACCENT, [image.pixelColor(x, 59) for x in range(39, 201)])
-        self.assertEqual(self.tray.preview.button_names(), ["finish"])
+        self.assertEqual(self.tray.preview.button_names(), ["finish", "retake"])
         self.assertFalse(self.tray.preview.timer.isActive())
         self.tray.preview.leaveEvent(None)
         self.assertFalse(self.tray.preview.timer.isActive())
@@ -197,7 +227,7 @@ class RepeatAreaTest(unittest.TestCase):
         self.assertTrue(all(not b.isVisible() for b in session.borders))
         self.assertIsNone(self.tray.repeat_area)
         self.assertIs(self.tray.undo, undo)
-        self.assertEqual(self.tray.preview.mode, "single")
+        self.assertEqual(self.tray.preview.mode, "repeated")
         self.assertEqual(self.tray.preview.image, self.first)
         self.clipboard.setImage.assert_not_called()
 
@@ -209,7 +239,7 @@ class RepeatAreaTest(unittest.TestCase):
                          preview.buttons["finish"].center())
         self.assertTrue(session.closed)
         self.assertIsNone(self.tray.repeat_area)
-        self.assertEqual(preview.mode, "single")
+        self.assertEqual(preview.mode, "repeated")
 
     def test_closing_preview_releases_border_and_escape(self):
         self.capture()
@@ -266,7 +296,7 @@ class RepeatAreaTest(unittest.TestCase):
         self.assertEqual(self.tray.preview.image, joined)
         self.assertEqual(self.tray.preview.mode, "repeated")
         self.assertEqual(self.tray.preview.label()[0], "copied · 3 images · 160×300")
-        self.assertEqual(self.tray.preview.button_names(), [])  # step 3 adds final actions
+        self.assertEqual(self.tray.preview.button_names(), ["draw", "save", "retake"])
         self.assertEqual(self.clipboard.setImage.call_count, 2)  # finishing never overwrites a newer copy
         self.assertTrue(all(not b.isVisible() for b in session.borders))
         session.add()
@@ -329,27 +359,181 @@ class RepeatAreaTest(unittest.TestCase):
         self.hotkey.return_value.close.assert_called_once()
         self.assertEqual(preview.image.height(), 300)
 
-    def test_auto_saved_first_file_is_unchanged_in_step_one(self):
+    def test_auto_save_removes_first_file_then_writes_one_final_joined_png_once(self):
         self.capture(auto_save=True)
+        first_path = self.tray.undo["saved_path"]
+        session = self.start()
+        self.assertFalse(first_path.exists())
+        self.add()
+        self.assertEqual(list(first_path.parent.iterdir()), [])
+        session.finish()
         path = self.tray.undo["saved_path"]
-        before = path.read_bytes()
-        self.start().finish()
-        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(QImage(str(path)), self.tray.preview.image)
+        self.assertEqual(QImage(str(path)).height(), 200)
+        self.assertEqual(list(path.parent.iterdir()), [path])
+        session.finish()
         self.assertEqual(list(path.parent.iterdir()), [path])
         self.assertEqual(self.tray.preview.saved_path, path)
+        self.assertEqual(self.tray.preview.label()[:2], ("saved · ", path.name))
+        self.assertEqual(self.tray.preview.button_names(), ["draw", "retake"])
 
-    def test_existing_draw_and_save_preview_state_survives(self):
+    def test_existing_drawing_stays_in_image_one_and_joined_draw_starts_fresh(self):
         self.capture(auto_save=True)
         preview = self.tray.preview
         preview.show_saved(self.tray.undo["saved_path"])
         annotated = self.first.copy()
         annotated.setPixelColor(10, 10, QColor("red"))
         preview.show_drawn(annotated)
-        label = preview.label()
+        self.tray.undo.update(draw_base=self.first, shapes=["old demo shape"])
         self.start().finish()
         self.assertEqual(preview.image, annotated)
-        self.assertEqual(preview.label(), label)
-        self.assertEqual(preview.save_state, "saved")
+        self.assertIsNone(preview.save_state)
+        self.assertNotIn("draw_base", self.tray.undo)
+        self.assertNotIn("shapes", self.tray.undo)
+        self.click("draw")
+        self.assertEqual(self.tray.draw_window.image, annotated)
+        self.assertEqual(self.tray.draw_window.shapes, [])
+
+    def test_finish_one_image_hides_repeat_and_add_buttons(self):
+        self.capture()
+        self.start().finish()
+        self.assertEqual(self.tray.preview.label()[0], "copied · 1 image · 160×100")
+        self.assertEqual(self.tray.preview.button_names(), ["draw", "save", "retake"])
+
+    def test_auto_save_uses_screenshot_jpg_format(self):
+        self.prefs["format"] = "jpg"
+        self.capture(auto_save=True)
+        session = self.start()
+        self.add()
+        session.finish()
+        path = self.tray.undo["saved_path"]
+        self.assertEqual(path.suffix, ".jpg")
+        self.assertTrue(path.read_bytes().startswith(b"\xff\xd8"))
+        self.assertEqual(QImage(str(path)).size(), self.tray.preview.image.size())
+        self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_manual_save_writes_joined_picture_once_and_draw_overwrites_same_file(self):
+        self.capture()
+        session = self.start()
+        self.add()
+        session.finish()
+        self.assertFalse(Path(self.prefs["save_folder"]).exists())
+        self.click("save")
+        path = self.tray.undo["saved_path"]
+        self.assertEqual(QImage(str(path)), self.tray.preview.image)
+        self.click("save")
+        self.assertEqual(list(path.parent.iterdir()), [path])
+        self.draw_box().finish()
+        self.assertEqual(QImage(str(path)).pixelColor(20, 140), QColor(COLORS["red"]))
+        self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_draw_updates_whole_joined_picture_clipboard_and_auto_saved_file(self):
+        self.capture(auto_save=True)
+        session = self.start()
+        self.add()
+        session.finish()
+        joined = self.tray.preview.image.copy()
+        path = self.tray.undo["saved_path"]
+        window = self.draw_box()
+        self.assertEqual(window.image, joined)
+        self.assertEqual(draw_title("repeated", 2, joined), "repeat area · 2 images · 160×200")
+        self.assertTrue(self.tray.preview.held)
+        window.finish()
+        drawn = self.tray.preview.image
+        self.assertEqual(drawn.size(), joined.size())
+        self.assertEqual(drawn.pixelColor(20, 140), QColor(COLORS["red"]))
+        self.assertEqual(self.clipboard.setImage.call_args.args[0], drawn)
+        self.assertEqual(QImage(str(path)), drawn)
+        self.click("draw")
+        self.assertEqual(len(self.tray.draw_window.shapes), 1)
+        self.tray.draw_window.undo()
+        self.tray.draw_window.finish()
+        self.assertEqual(self.tray.preview.image, joined)
+
+    def test_escape_in_draw_leaves_joined_result_unchanged(self):
+        self.capture()
+        session = self.start()
+        self.add()
+        session.finish()
+        joined = self.tray.preview.image.copy()
+        self.clipboard.setImage.reset_mock()
+        window = self.draw_box()
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        self.assertEqual(self.tray.preview.image, joined)
+        self.clipboard.setImage.assert_not_called()
+        self.assertFalse(self.tray.preview.held)
+
+    def test_active_retake_removes_last_image_and_updates_references_without_screen_read(self):
+        self.capture()
+        session = self.start()
+        second = self.first.copy()
+        second.fill(QColor("#4A6240"))
+        self.add(second)
+        self.add()
+        self.tray.preview.set_hover("retake")
+        self.assertEqual(self.tray.preview.label()[0], "retake · remove image 3")
+        self.click("retake")
+        self.assertEqual(session.count(), 2)
+        self.assertEqual(self.tray.preview.count, 2)
+        self.assertEqual(self.tray.preview.image.copy(0, 100, 160, 100), second)
+        self.assertEqual(self.clipboard.setImage.call_args.args[0], self.tray.preview.image)
+        self.assertEqual(session.borders[0].references[0][1], second.copy(0, 60, 160, 40))
+        self.assertFalse(session.closed)
+        self.assertFalse(self.tray.preview.timer.isActive())
+        self.assertEqual(self.read.call_count, 2)
+
+    def test_active_retake_preserves_newer_clipboard_copy_and_finish_does_not_replace_it(self):
+        self.capture()
+        session = self.start()
+        self.add()
+        self.version += 1  # another app copied something after our latest image
+        self.clipboard.setImage.reset_mock()
+        self.click("retake")
+        self.assertEqual(session.count(), 1)
+        self.assertEqual(self.tray.preview.image, self.first)
+        session.finish()
+        self.clipboard.setImage.assert_not_called()
+
+    def test_retake_with_image_one_restores_clipboard_and_reselects_same_frozen_screen(self):
+        self.capture(auto_save=True)
+        frozen = self.tray.undo["frozen"]
+        session = self.start()
+        folder = Path(self.prefs["save_folder"])
+        with patch("snapclick.tray.Capture") as capture:
+            self.click("retake")
+            capture.assert_called_once_with(frozen)
+        self.restored.assert_called_once_with(self.previous)
+        self.assertTrue(session.closed)
+        self.assertIsNone(self.tray.repeat_area)
+        self.hotkey.return_value.close.assert_called_once()
+        self.assertEqual(list(folder.iterdir()), [])  # discarding never saves a final image
+
+    def test_finished_retake_restores_previous_clipboard_deletes_file_and_reselects(self):
+        self.capture(auto_save=True)
+        frozen = self.tray.undo["frozen"]
+        session = self.start()
+        self.add()
+        session.finish()
+        path = self.tray.undo["saved_path"]
+        with patch("snapclick.tray.Capture") as capture:
+            self.click("retake")
+            capture.assert_called_once_with(frozen)
+        self.restored.assert_called_once_with(self.previous)
+        self.assertFalse(path.exists())
+
+    def test_finished_retake_preserves_newer_copy_and_deletes_saved_result(self):
+        self.capture(auto_save=True)
+        session = self.start()
+        self.add()
+        session.finish()
+        path = self.tray.undo["saved_path"]
+        self.version += 1
+        self.clipboard.setImage.reset_mock()
+        with patch("snapclick.tray.Capture"):
+            self.click("retake")
+        self.restored.assert_not_called()
+        self.clipboard.setImage.assert_not_called()
+        self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

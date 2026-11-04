@@ -137,12 +137,8 @@ class Preview(QWidget):
 
     def button_names(self):
         """Buttons, left to right."""
-        if self.mode == "stacking":
+        if self.mode in ("stacking", "repeating"):
             return ["finish", "retake"]
-        if self.mode == "repeating":
-            return ["finish"]  # active Retake comes in Repeat area step 3
-        if self.mode == "repeated":
-            return []  # final Save/Draw/Retake come in Repeat area step 3
         names = ["add", "repeat", "draw"] if self.mode == "single" else ["draw"]
         if self.can_save:
             names.append("save")
@@ -220,6 +216,9 @@ class Preview(QWidget):
     def start_repeat_area(self):
         self.mode = "repeating"
         self.count = 1
+        self.saved_path = None
+        self.save_state = None
+        self.drawn = False
         self.hover = None
         self.timer.stop()
         exclude_from_capture(self)
@@ -228,15 +227,15 @@ class Preview(QWidget):
 
     def set_repeat_area(self, image, count):
         self.image, self.count = image, count
-        # Step 2 is clipboard-only; file integration follows in step 3.
         self.saved_path = None
         self.save_state = None
         self.drawn = False
         self.place()
         self.update()
 
-    def finish_repeat_area(self):
-        self.mode = "single" if self.count == 1 else "repeated"
+    def finish_repeat_area(self, image, count, saved_path):
+        self.image, self.count, self.saved_path = image, count, saved_path
+        self.mode = "repeated"
         self.hover = None
         self.place()
         self.update()
@@ -331,6 +330,9 @@ class Preview(QWidget):
         if self.mode == "repeating":
             if self.hover == "finish":
                 return "finish · stop adding", None, GREEN
+            if self.hover == "retake":
+                label = f"retake · remove image {self.count}" if self.count > 1 else "retake · undo copy"
+                return label, None, AMBER
             return f"repeat area · {self.count} · [prtsc] add · [esc] done", None, AMBER
         if self.mode == "stacking":
             if self.hover == "finish":
@@ -363,8 +365,11 @@ class Preview(QWidget):
             size = f"{self.image.width()}×{self.image.height()}"
             return f"copied · {self.count} {pieces} · {size}", None, GREEN
         if self.mode == "repeated":
+            if self.saved_path:
+                return "saved · ", self.saved_path.name, MUTED
             size = f"{self.image.width()}×{self.image.height()}"
-            return f"copied · {self.count} images · {size}", None, GREEN
+            images = "image" if self.count == 1 else "images"
+            return f"copied · {self.count} {images} · {size}", None, GREEN
         if self.saved_path:  # auto-saved
             return "saved · ", self.saved_path.name, MUTED
         return "copied to clipboard", None, MUTED
