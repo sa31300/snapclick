@@ -1,9 +1,10 @@
-# Snapclick — Specification v1.5
+# Snapclick — Specification v1.6
 
 v1.1 adds **Stack** (§2b): long captures made of several pieces, joined into one tall image.
 v1.2 makes the Stack flow exact (owner's own words + a reference animation), adds test-only settings (§6), and a status / next-steps section (§2b). No new user features.
 v1.4 (2026-10-16): while stacking, piece 1's **rows are no limit any more**, only its columns are. Stripes follow captured lines anywhere in the column; a click anywhere in the column ends the piece there; no dashed next-piece box. Owner found this on their PC (photos of the real app).
 v1.5 (2026-10-21): adds **Draw** (§2c): mark up a capture (arrows, boxes, highlights, notes, blur, steps) before it goes to the clipboard. Stack: **↓** scrolls one notch (§2b, 4b).
+v1.6 (2026-10-23, **owner approved**): adds **Record** (§2d): press **Insert**, record a screen rectangle, get a **PNG frame sheet** (one image an AI chat can read). MP4 comes later (phase 2).
 
 A tiny Windows tray app: press PrtSc, click two corners, the image is in your clipboard.
 
@@ -241,6 +242,84 @@ Known limit: while drawing, dragging past the window's edge does not scroll the 
 
 **No release** until the owner has tested Draw on their own PC and said yes.
 
+## 2d. Record — short screen recordings
+
+*(v1.6, 2026-10-23, **approved by the owner** together with the reference GIF. Build phase 1 only — PNG frame sheet. Phase 2 (MP4) waits for the owner's go.)*
+
+Why: to show an AI chat a short flow ("I click here, this opens, then this happens"). AI chats read **images**, not videos. So the main output is a **PNG frame sheet**: the key moments of the recording, numbered, in one grid image. MP4 is optional, for people or for AIs that watch video.
+
+**Reference animation** (mockup with a fake ledger screen, not the real app; **approved by the owner on 2026-10-23**): [`docs/design/record-flow.gif`](design/record-flow.gif). It shows the MP4 / Both choice in Settings: that is **phase 2**; in phase 1 the Recording format row is hidden. Where the GIF and the text seem to disagree, stop and ask.
+
+### Flow
+
+1. Press **Insert** *(owner choice, 2026-10-23: PrtSc stays for screenshots, Insert is for recordings)*. Also from the tray right-click menu → **Record**. Same tray icon for both.
+   - Insert is fixed (not editable), registered like PrtSc (`RegisterHotKey`). While Snapclick runs, Insert no longer toggles overwrite mode in other apps (Word, Excel). If another app holds Insert, a one-time message says so (Record still works from the tray menu).
+2. The overlay appears on the **live** screen (not frozen). Same look and rules as §1–§2: crosshair, magnifier, two clicks for the corners, Esc / right-click cancels.
+3. After click 2, the rectangle stays marked (1 px dashed red `#FF6B6B` border, **outside** the area so it is never recorded). The dim layer goes away, so the user can work normally.
+4. A small **control bar** appears just below the rectangle (above it if there is no room): `▶ record` · `✕ cancel`. Style B.
+5. Click **▶ record**: recording starts. The bar shows `■ stop` and a timer `0:07 / 0:30`. The border turns solid red.
+6. The user works inside the rectangle (clicks, typing, scrolling in their own apps). Mouse and keyboard go to the apps as usual.
+7. Click **■ stop**, or the max length is reached → recording ends. **Esc** while recording = stop (keeps the recording). **✕ cancel** before recording = nothing saved.
+8. Snapclick makes the outputs set in Settings (below) and shows the **preview** (§2) with the sheet, label `recorded · 12 frames · 0:18`.
+
+Example: the user records 18 s of opening a menu and picking an item. Result: one PNG with 12 numbered tiles, copied to the clipboard; Ctrl+V into the AI chat.
+
+### What is recorded
+
+- Only the rectangle, in real pixels (§1), about **5 frames per second**.
+- The **mouse pointer** is drawn into the frames (where it is, from its position), so the steps are clear.
+- **Click marks (to try first, owner decision 2026-10-23):** a visual mark only, no sound. On each left click, a circle (accent `#FFB000`, 2 px, about 24 px wide) is drawn around the pointer tip in the frames for about 0.4 s, growing slightly (a cheap, clear animation in the MP4). In the PNG sheet, a frame that has a click shows the circle, so the AI sees *where* you clicked. Reading the mouse button: poll `GetAsyncKeyState(VK_LBUTTON)` with each frame read, only while recording. No hooks.
+  - **Rollback rule:** build this as its own step and test it with Bitdefender on. If Bitdefender blocks or flags the build or the run, stop and tell the owner; then remove click marks and keep **pointer only**. Do not work around it.
+- No sound. No keyboard or mouse **hooks**.
+- Snapclick's own windows (border, control bar) are left out (`WDA_EXCLUDEFROMCAPTURE`, as §6).
+
+### PNG frame sheet
+
+- Snapclick picks the frames: it skips frames that look the same as the last kept one (nothing changed on screen), then takes **N** frames spread evenly over the rest (N = setting, default 12). Always keeps the first and the last frame.
+- Grid: always 4 columns, rows as needed (8 → 2 rows, 12 → 3, 16 → 4). Fewer frames than N (short recording) → fewer tiles. Background `#0D0E10`, 8 px gaps.
+- Each tile has a tag **above** its top-left corner (so it never covers the picture): `3 · 0:04` (frame number · time), mono 12 px semibold, black on accent.
+- Size: tiles are scaled **down** evenly so the whole sheet is at most **2400 px** on its longest side. Never scaled up.
+- The sheet goes to the **clipboard** (like a capture) and is saved as a file.
+
+### MP4
+
+- All frames, about 5 fps, the rectangle's size (rounded to even numbers if the encoder needs it).
+- Saved as a file only (the clipboard can't hold a video). The preview label's file name link (§2) opens it in Explorer.
+
+### Files
+
+- *(Owner decision, 2026-10-23)* Recordings have their **own** auto-save toggle, **Auto-save recordings** (§4), separate from screenshots:
+  - Format = **PNG frame sheet**: the toggle works normally. Off → the sheet goes only to the clipboard; the preview's **Save** button saves it (§2 rules).
+  - Format = **MP4** or **Both**: the toggle is **forced on** and greyed out, with the note `always on with MP4` (the MP4 has nowhere else to go). Switching back to PNG restores the user's own choice.
+  - The screenshot toggle (**Auto-save screenshots**) never changes because of recordings.
+- Files go to the **save folder** (§4).
+- Names: `rec_YYYY-MM-DD_HH-MM-SS.png` and `rec_YYYY-MM-DD_HH-MM-SS.mp4` (same name for both).
+- Draw (§2c) works on the sheet, like on a capture. Add below is hidden for recordings.
+- Retake on a recording deletes its files and restores the clipboard (§2 rules), then starts **Record** again.
+
+### Decisions (owner, 2026-10-23)
+
+1. ~~Start key~~ **Decided (2026-10-23): Insert** + tray menu Record.
+2. ~~Files~~ **Decided (2026-10-23):** separate **Auto-save recordings** toggle; forced on with MP4 / Both (see Files).
+3. ~~Show clicks~~ **Decided (2026-10-23):** try visual click marks first (see What is recorded); if Bitdefender has issues, roll back to pointer only.
+4. ~~MP4 encoder~~ **Decided (2026-10-23): PNG first, MP4 later.** Phase 1 builds only the PNG frame sheet (no new dependency). MP4 is phase 2: a separate test of the encoder (e.g. `imageio-ffmpeg`, ~30–60 MB more in the `.exe`) with Bitdefender on, and the owner's OK before adding it. In phase 1 the **Recording format** setting is **not shown** (PNG only), and **Auto-save recordings** works as a normal toggle.
+5. **Approved (2026-10-23):** the mockup GIF `docs/design/record-flow.gif` is the look target.
+
+### Status (2026-10-23)
+
+Spec and GIF approved. **Nothing built yet.** Next: build step 1 below. One step, then stop and wait for the owner's test and OK (AGENTS.md).
+
+### Build steps (for the AI) — one at a time, stop after each
+
+1. **Insert hotkey + tray Record + select + control bar** (no recording yet): ✕ cancel and Esc close it. *Test: Insert → two corners → bar shows → ✕ → nothing saved; PrtSc still takes a normal screenshot.*
+2. **Record frames + PNG frame sheet** to clipboard and file; settings Frames per sheet and Max length. *Test: record 10 s of opening a menu → paste the sheet into Paint: numbered tiles, first and last moment there.*
+2b. **Click marks** (a separate step, so it can be rolled back alone). *Test: with Bitdefender on, record 3 clicks → the sheet shows a circle at each click. If Bitdefender reacts: stop, tell the owner, roll back.*
+3. **Preview, Draw, Retake** for recordings. *Test: record → Draw a box → ✓ → paste.*
+4. **Phase 2 — MP4 and the Format setting.** Not before the owner says go. First a spike: add the encoder, build the `.exe`, run it with Bitdefender on; stop and report. Only then the feature. *Test: Format = Both → two files with the same name; the MP4 plays in the Windows player.*
+5. **README** (How to use + GIF, fake content only). Ask first.
+
+**No release** until the owner has tested Record on their own PC and said yes.
+
 ## 2e. Repeat area — full captures of one fixed rectangle
 
 *(Approved by the owner on 2026-11-04.)* Start with a normal screenshot, then keep capturing the same screen rectangle with PrtSc. Join the full images vertically, in capture order. **Keep repeated content: no overlap removal or matching.**
@@ -298,7 +377,7 @@ The owner confirmed steps 1, 2, 2b (including Soft tint) and 3 (Save, Draw and R
   - Follow the Windows theme automatically and switch when it changes.
   - Must be crisp at 16 px (provide 16, 20, 24, 32 px sizes in the .ico).
 - Left-click: start a capture.
-- Right-click menu: **Capture** · **Settings…** · **Open save folder** · **Quit**.
+- Right-click menu: **Capture** `PrtSc` · **Record** `Insert` (§2d) · **Settings…** · **Open save folder** · **Quit**. The key names are shown muted on the right of their items.
 - Tooltip: `Snapclick — PrtSc to capture`. If PrtSc could not be registered: `Snapclick — hotkey taken, click to capture`.
 
 ## 4. Settings window
@@ -307,13 +386,19 @@ Opened from the tray menu. Small fixed window (about 380 px wide), dark, style B
 
 | Setting | Type | Default |
 |---|---|---|
-| Auto-save each capture | toggle | off — in a stack, only the final joined image is saved |
+| Auto-save screenshots *(was "Auto-save each capture"; same setting, renamed in v1.6)* | toggle | off — in a stack, only the final joined image is saved |
 | Save folder | text + "Browse" button | `%USERPROFILE%\Pictures\Snapclick` |
 | File name | read-only preview | `YYYY-MM-DD_HH-MM-SS.png`, e.g. `2026-10-14_18-12-05.png` |
 | Format | PNG / JPG switch | PNG |
-| Hotkey | shown as chip | `PrtSc` (fixed, not editable) |
+| Hotkey · screenshot | shown as chip | `PrtSc` (fixed, not editable) |
+| Hotkey · recording | shown as chip | `Insert` (fixed, not editable; §2d) |
 | Show preview after capture | toggle | off — when on, a small thumbnail appears bottom-right for 3 s |
 | Start with Windows | toggle | off |
+| **Recording** (§2d) | section title | — |
+| Recording format | 3-way switch: `PNG frame sheet` / `MP4` / `Both` | PNG frame sheet |
+| Frames per sheet | 8 / 12 / 16 (hidden when format = MP4) | 12 |
+| Max recording length | 15 / 30 / 60 s | 30 s |
+| Auto-save recordings | toggle; forced on + greyed (`always on with MP4`) when format = MP4 or Both | off |
 
 - Settings save immediately (no "Save" button).
 - Stored in `%APPDATA%\Snapclick\settings.json`.
@@ -386,3 +471,10 @@ Automatic scrolling capture (Snapclick scrolling by itself), horizontal stacking
 - [x] Draw: after a 3-piece stack, scroll inside the draw window, draw at the bottom → ✓ → paste shows the full tall picture with it. *(2026-10-21)*
 - [x] Draw: Esc → nothing changes. Not clicking Draw → same as today. *(2026-10-21)*
 - [x] Draw: Save after ✓ writes the picture with drawings. *(2026-10-21)*
+- [ ] Record: Insert starts a recording, PrtSc still takes a screenshot.
+- [ ] Record: select a rectangle → ▶ → work → ■ → the PNG sheet is in the clipboard; pasted into an AI chat, the steps are readable in order.
+- [ ] Record: Format = MP4 / Both writes the right files with the same name; the MP4 plays.
+- [ ] Record: PNG + Auto-save recordings off → clipboard only, no file; MP4 → toggle forced on; Auto-save screenshots never changes.
+- [ ] Record: each click shows a circle in the sheet; Bitdefender stays quiet (else: rolled back to pointer only).
+- [ ] Record: nothing outside the rectangle and none of Snapclick's own windows appear in the frames.
+- [ ] Record: ✕ cancel before ▶ saves nothing; max length stops by itself.
