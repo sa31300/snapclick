@@ -4,44 +4,46 @@
 
 The owner confirmed Record steps 1, 2, 2b and 3 on their PC, then approved the recording README and demo GIF in this chat.
 
-- The next task is to decide and specify the fixed-rectangle mode below. Planning is authorized; implementation still waits for the owner's decisions and an approved spec.
+- The owner chose the entry point and full-image behavior below. Review the proposed finishing rules, then add the agreed mode to SPEC.md before implementation.
 - MP4 is phase 2 and still needs the owner's explicit go-ahead. No push, tag or release without a request.
 
 ## Draft: capture a fixed rectangle by pressing a key
 
 Requested on 2026-11-04. The owner has now asked to define this mode. The following is a planning draft, not an addition to the approved specification yet.
 
-1. Press a key (to be decided) and choose a rectangle with two corners.
-2. The rectangle becomes the first image. Its full dashed perimeter stays over the live screen.
-3. Scroll up or down normally.
-4. Press the key again to capture whatever is now inside that same rectangle and append it below the previous image.
-5. Repeat. Esc finishes the joined image. Images are appended in capture order, including after scrolling upward.
+### Owner's chosen flow
 
-There are no continuous screen reads in this proposed flow. Content is captured only on a keypress. For example, capturing lines 1–20 and then 61–80 cannot recover lines 21–60, even with overlap removal.
+1. Press **PrtSc** and choose a rectangle with two corners, as for a normal screenshot. This is image 1.
+2. Click a new icon on the preview to enter the mode. Proposed name: **Repeat area**, with two overlapping rectangles as its icon.
+3. Show the same rectangle's full dashed perimeter over the live screen. Its screen position and size stay fixed.
+4. Scroll up or down normally, then press **PrtSc** to capture the entire rectangle again and append it below the earlier image.
+5. Repeat. **Esc** finishes the joined image. Outside this mode, PrtSc takes a normal screenshot and Insert records, as before.
 
-### Key choice: awaiting the owner
+**Keep whole images, including repeated content.** There is no overlap removal or matching. Scrolling upward still appends the new image below, in capture order.
 
-PrtSc currently captures a screenshot and Insert starts recording. Proposed choices:
+Example: image 1 contains lines 1–20; image 2 contains 11–30. The result contains 1–20 followed by 11–30, including the repeated lines.
 
-- Shift+PrtSc starts the new mode; plain PrtSc adds each piece while it is active.
-- Shift+PrtSc starts the mode and adds each piece.
+Only read the screen when adding an image. For example, capturing lines 1–20 and then 61–80 cannot recover lines 21–60. No continuous screen reads or overlap-matching work are needed for this mode.
 
-### Overlap choice: awaiting the owner
+### Proposed finishing rules for approval
 
-- Try removing overlap: lines 1–20 followed by 11–30 should become lines 1–30 once each.
-- Keep full images: those captures become lines 1–20 followed by 11–30, with the overlap repeated.
+- Needs **Show preview after capture** on, because the new icon lives on the normal screenshot preview. Place it between Add below and Draw. Hide it for recordings and finished stacks.
+- The live screen stays clear and usable: only the fixed dashed amber rectangle is overlaid, with no dim layer. Mouse clicks, wheel, touchpad and ordinary typing go to the underlying app. Right-click keeps its normal app behavior.
+- Each added image has the first image's real-pixel width and height. Join full images vertically, without resizing or gaps. Leave Snapclick's border and preview out of the screen read. Handle held PrtSc as a single press, as today.
+- Reuse Stack's result handling: the clipboard holds the joined image after each addition; the preview stays open, shows the image count, and offers Finish and Retake while active.
+- Finish through Esc or the preview's Finish button. Release the temporary Esc hotkey and start the normal preview timer. Draw and Save work on the final joined image.
+- Reuse screenshot saving settings, including PNG/JPG. With screenshot auto-save on, keep one final joined file when the mode finishes, as Stack does. Entering the mode replaces any auto-saved file for image 1 with the final joined result.
+- Reuse Stack's Retake rules: while active, remove only the last added image; with only image 1 left, use normal Retake. After finishing, normal Retake undoes the joined capture. Restore the old clipboard only if nothing newer was copied.
 
-If overlap removal is chosen, start with a small test on fake content and measure its cost before adding it to the app.
+These rules are a proposal to review, not authorization to change existing capture modes or implement overlap removal.
 
-### Remaining decisions before implementation
+### Proposed build steps — one at a time
 
-- With overlap removal, what should scrolling upward do? Example: capture 21–40, then 11–30. Keep capture order, or put the new lines above the earlier content to preserve reading order?
-- What should happen if there is no overlap or several plausible matches? Do not silently remove uncertain content.
-- How should matching handle static bars, blank areas and look-alike text rows?
-- Confirm which existing clipboard, preview, saving and Retake rules should apply to this mode.
+1. **Preview icon, fixed border and Esc**: start from a normal screenshot; the new icon shows the border over the live screen. Scroll and click in the app normally. Esc closes the border and keeps image 1. No repeated captures yet. Stop for the owner's test.
+2. **PrtSc adds full images**: append the entire fixed box on each press, update the clipboard and image-count preview, then finish with Esc. Test three captures, including scrolling up and repeated content. Stop for the owner's test.
+3. **Save, Draw and Retake**: verify the final joined file and editing; Retake removes the last image while active and preserves newer clipboard copies. Stop for the owner's test.
+4. **README and fake-content demo GIF**: ask first. No release without a request.
 
-### Overlap removal and power use
+### Earlier overlap-removal discussion
 
-Comparing images takes more CPU than simply appending them. A possible approach is to compare only when the key is pressed, with no continuous matching between captures. This could keep the work to short bursts; actual CPU use, battery impact and delay need a prototype and measurement.
-
-Reliability is the main question: an incorrect match could remove legitimate lines. The matching rules and behavior when no reliable overlap is found must be decided before building this mode. No choice has been made yet.
+The owner chose to keep repeated content, so overlap removal is outside this mode. If considered later, compare only on keypress and measure CPU use, battery impact and delay on fake content. Repeated text, static bars and uncertain matches must be resolved before an overlap-removing version is approved.
