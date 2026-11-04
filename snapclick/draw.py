@@ -55,6 +55,8 @@ def draw_title(mode, count, image):
     size = f"{image.width()}×{image.height()}"
     if mode == "single":
         return f"shot · {size}"
+    if mode == "recorded":
+        return f"recording · {count} {'frame' if count == 1 else 'frames'} · {size}"
     return f"stack · {count} {'piece' if count == 1 else 'pieces'} · {size}"
 
 

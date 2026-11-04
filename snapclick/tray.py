@@ -8,7 +8,7 @@ from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPi
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from snapclick import settings
-from snapclick.capture import Capture, clipboard_version, restore_clipboard
+from snapclick.capture import Capture, clipboard_version, restore_clipboard, save_clipboard
 from snapclick.draw import DrawWindow, draw_title
 from snapclick.preview import Preview
 from snapclick.record import Record
@@ -161,10 +161,28 @@ class Tray(QSystemTrayIcon):
         self.recording.finished.connect(self._record_done)
 
     def _recorded(self, image, count, elapsed):
-        QGuiApplication.clipboard().setImage(image)
         prefs = self.recording.prefs
-        if prefs["auto_save_recordings"]:
-            self.save_image(image, dict(prefs, format="png"), prefix="rec_")
+        previous_clipboard = save_clipboard() if prefs["show_preview"] else None
+        QGuiApplication.clipboard().setImage(image)
+        copied_version = clipboard_version() if prefs["show_preview"] else None
+        auto_save = prefs["auto_save_recordings"]
+        saved_path = self.save_image(image, dict(prefs, format="png"), prefix="rec_") if auto_save else None
+        if not prefs["show_preview"]:
+            return
+        self.undo = {
+            "recording": True,
+            "clipboard": previous_clipboard,
+            "clipboard_version": copied_version,
+            "saved_path": saved_path,
+        }
+        self.preview = Preview(image, can_save=not auto_save, save_folder=prefs["save_folder"],
+                               saved_path=saved_path, mode="recorded", count=count, elapsed=elapsed)
+        self.preview.retake.connect(self.undo_and_retake)
+        self.preview.save_requested.connect(self.save_from_preview)
+        self.preview.draw.connect(self.open_draw)
+        self.preview.closed.connect(self._preview_closed)
+        if auto_save and saved_path is None:
+            self.preview.show_save_failed()
 
     def _record_done(self):
         self.recording = None
@@ -194,7 +212,12 @@ class Tray(QSystemTrayIcon):
             self.preview.closed.connect(self._preview_closed)
 
     def save_from_preview(self):
-        path = self.save_image(self.preview.image, settings.load())
+        prefs = settings.load()
+        prefix = ""
+        if self.preview.mode == "recorded":
+            prefs = dict(prefs, format="png")
+            prefix = "rec_"
+        path = self.save_image(self.preview.image, prefs, prefix=prefix)
         if path:
             self.undo["saved_path"] = path  # Retake deletes it too
             self.preview.show_saved(path)
@@ -305,7 +328,10 @@ class Tray(QSystemTrayIcon):
             restore_clipboard(undo["clipboard"])
         if undo["saved_path"]:
             self.delete_file(undo["saved_path"])
-        self.start_capture(frozen=undo["frozen"])
+        if undo.get("recording"):
+            self.start_record()
+        else:
+            self.start_capture(frozen=undo["frozen"])
 
     def delete_file(self, path):
         try:

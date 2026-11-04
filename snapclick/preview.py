@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication,
 from PySide6.QtWidgets import QWidget
 
 from snapclick.capture import exclude_from_capture
+from snapclick.frames import clock_text
 
 MAX_SIZE = QSize(240, 160)
 MIN_WIDTH = 220  # room for the label
@@ -87,7 +88,7 @@ class Preview(QWidget):
     finish = Signal()  # stop adding to the stack
     closed = Signal()
 
-    def __init__(self, image, can_save, save_folder, saved_path=None):
+    def __init__(self, image, can_save, save_folder, saved_path=None, *, mode="single", count=1, elapsed=0):
         """`can_save`: show the Save button (auto-save is off).
         `saved_path`: the file auto-save already wrote, if any."""
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
@@ -100,8 +101,9 @@ class Preview(QWidget):
         self.saved_path = saved_path  # file written by auto-save or the Save button
         self.save_state = None  # None, "saved" or "failed" (Save button only)
         self.hover = None  # a button name, "link" (the file name) or None
-        self.mode = "single"  # "single", "stacking" or "stacked"
-        self.count = 1  # stack pieces
+        self.mode = mode  # "single", "stacking", "stacked" or "recorded"
+        self.count = count  # stack pieces or recording frames
+        self.elapsed = elapsed
         self.held = False  # stays open while the draw window is open
         self.drawn = False  # the label says "with drawings" (§2c), until a later Save
         self.home = QCursor.pos()  # the preview shows on this point's monitor
@@ -307,6 +309,9 @@ class Preview(QWidget):
             return self.save_folder, None, BLUE
         if self.drawn:
             return "copied · with drawings", None, GREEN
+        if self.mode == "recorded":
+            frames = "frame" if self.count == 1 else "frames"
+            return f"recorded · {self.count} {frames} · {clock_text(self.elapsed)}", None, MUTED
         if self.mode == "stacked":
             pieces = "piece" if self.count == 1 else "pieces"
             size = f"{self.image.width()}×{self.image.height()}"
