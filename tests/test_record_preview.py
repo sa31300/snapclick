@@ -54,7 +54,7 @@ class RecordingPreviewTest(unittest.TestCase):
             elif name.endswith("QGuiApplication.clipboard"):
                 result.return_value.setImage.side_effect = self.copied_image
 
-        self.tray = PreviewTray(preview=None, draw_window=None, undo=None, stack=None,
+        self.tray = PreviewTray(preview=None, draw_window=None, undo=None, stack=None, repeat_area=None,
                                start_record=Mock(), start_capture=Mock(), showMessage=Mock())
         for name in ("save_image", "save_from_preview", "open_draw", "_drawn", "_draw_closed", "copy",
                      "_preview_closed", "close_preview", "undo_and_retake", "delete_file"):

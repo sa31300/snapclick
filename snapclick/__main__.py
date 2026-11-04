@@ -93,6 +93,7 @@ def main():
     app.aboutToQuit.connect(tray.hotkey.unregister)
     app.aboutToQuit.connect(tray.record_hotkey.unregister)
     app.aboutToQuit.connect(lambda: tray.recording.close() if tray.recording else None)
+    app.aboutToQuit.connect(tray.finish_repeat_area)
     warn_once_if_hotkey_taken(tray.hotkey)
     warn_once_if_insert_taken(tray.record_hotkey)
     if settings.load()["start_with_windows"]:

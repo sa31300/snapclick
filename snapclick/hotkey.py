@@ -13,6 +13,7 @@ VK_INSERT = 0x2D
 HOTKEY_ID = 1
 RECORD_HOTKEY_ID = 4  # Stack uses 2 (Esc) and 3 (Down)
 RECORD_ESCAPE_ID = 5
+REPEAT_ESCAPE_ID = 6
 
 # The hotkey (fixed): Win32 key code, modifier flags, display name.
 DEFAULT_HOTKEY = {"vk": VK_SNAPSHOT, "mods": 0, "name": "PrtSc"}

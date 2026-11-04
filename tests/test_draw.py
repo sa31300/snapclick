@@ -50,8 +50,8 @@ class DrawButtonTest(unittest.TestCase):
         return names
 
     def test_order_single_shot(self):
-        self.assertEqual(self.buttons(can_save=True), ["add", "draw", "save", "retake"])
-        self.assertEqual(self.buttons(can_save=False), ["add", "draw", "retake"])  # auto-save on
+        self.assertEqual(self.buttons(can_save=True), ["add", "repeat", "draw", "save", "retake"])
+        self.assertEqual(self.buttons(can_save=False), ["add", "repeat", "draw", "retake"])  # auto-save on
 
     def test_hidden_while_stacking(self):
         self.assertEqual(self.buttons(can_save=True, mode="stacking"), ["finish", "retake"])

@@ -29,7 +29,7 @@ AMBER = QColor("#FFB000")
 BLUE = QColor("#8FD3FF")
 GREEN = QColor("#3DDC97")
 VIOLET = QColor("#B197FC")
-HOVER_COLORS = {"retake": AMBER, "save": BLUE, "add": TEXT, "finish": GREEN, "draw": VIOLET}
+HOVER_COLORS = {"retake": AMBER, "save": BLUE, "add": TEXT, "repeat": TEXT, "finish": GREEN, "draw": VIOLET}
 
 
 def draw_icon(p, name, box, color):
@@ -63,6 +63,13 @@ def draw_icon(p, name, box, color):
         path.lineTo(10, 17)
         path.moveTo(7.25, 14.25)
         path.lineTo(12.75, 14.25)
+    elif name == "repeat":  # two overlapping rectangles
+        path.moveTo(7.5, 7.5)
+        path.lineTo(7.5, 4.5)
+        path.lineTo(15.5, 4.5)
+        path.lineTo(15.5, 12.5)
+        path.lineTo(12.5, 12.5)
+        path.addRect(4.5, 7.5, 8, 8)
     elif name == "draw":  # pen, tip bottom-left
         path.moveTo(12.5, 4.5)
         path.lineTo(15.5, 7.5)
@@ -84,6 +91,7 @@ class Preview(QWidget):
     retake = Signal()  # undo this capture (or the last stack piece) and select again
     save_requested = Signal()
     add_below = Signal()  # start a stack
+    repeat_area = Signal()  # keep the screenshot rectangle marked (§2e)
     draw = Signal()  # open the draw window (§2c)
     finish = Signal()  # stop adding to the stack
     closed = Signal()
@@ -101,7 +109,7 @@ class Preview(QWidget):
         self.saved_path = saved_path  # file written by auto-save or the Save button
         self.save_state = None  # None, "saved" or "failed" (Save button only)
         self.hover = None  # a button name, "link" (the file name) or None
-        self.mode = mode  # "single", "stacking", "stacked" or "recorded"
+        self.mode = mode  # "single", "stacking", "stacked", "recorded" or "repeating"
         self.count = count  # stack pieces or recording frames
         self.elapsed = elapsed
         self.held = False  # stays open while the draw window is open
@@ -131,7 +139,9 @@ class Preview(QWidget):
         """Buttons, left to right."""
         if self.mode == "stacking":
             return ["finish", "retake"]
-        names = ["add", "draw"] if self.mode == "single" else ["draw"]
+        if self.mode == "repeating":
+            return ["finish"]  # active Retake comes in Repeat area step 3
+        names = ["add", "repeat", "draw"] if self.mode == "single" else ["draw"]
         if self.can_save:
             names.append("save")
         return names + ["retake"]
@@ -205,6 +215,23 @@ class Preview(QWidget):
         self.place()
         self.update()
 
+    def start_repeat_area(self):
+        self.mode = "repeating"
+        self.hover = None
+        self.timer.stop()
+        exclude_from_capture(self)
+        self.place()
+        self.update()
+
+    def finish_repeat_area(self):
+        # Step 1 has only image 1: restore its preview and existing Save/Draw state.
+        self.mode = "single"
+        self.hover = None
+        self.place()
+        self.update()
+        if not self.underMouse():
+            self.timer.start()
+
     def start_stack(self):
         """Stay open, show Finish and Retake, never appear in screen reads."""
         self.mode = "stacking"
@@ -236,7 +263,7 @@ class Preview(QWidget):
 
     def leaveEvent(self, event):
         self.set_hover(None)
-        if self.mode != "stacking" and not self.held:
+        if self.mode not in ("stacking", "repeating") and not self.held:
             self.timer.start()
 
     def mouseMoveEvent(self, event):
@@ -265,6 +292,8 @@ class Preview(QWidget):
             self.save_requested.emit()
         elif name == "add":
             self.add_below.emit()
+        elif name == "repeat":
+            self.repeat_area.emit()
         elif name == "draw":
             self.draw.emit()
         elif name == "finish":
@@ -288,6 +317,10 @@ class Preview(QWidget):
 
     def label(self):
         """(text, file name or None, color) for the line under the image."""
+        if self.mode == "repeating":
+            if self.hover == "finish":
+                return "finish · stop adding", None, GREEN
+            return "repeat area · 1 · [esc] done", None, AMBER
         if self.mode == "stacking":
             if self.hover == "finish":
                 return "finish · stop adding", None, GREEN
@@ -299,6 +332,8 @@ class Preview(QWidget):
             return "retake · undo copy", None, AMBER
         if self.hover == "add":
             return "add below · start a stack", None, TEXT
+        if self.hover == "repeat":
+            return "repeat area · keep this box", None, TEXT
         if self.hover == "draw":
             return "draw · mark up", None, VIOLET
         if self.save_state == "saved" and not self.drawn:

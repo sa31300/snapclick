@@ -92,11 +92,12 @@ class LiveOverlay(Overlay):
 class RecordBorder(QWidget):
     """A one-pixel border outside the selected area; all input passes through."""
 
-    def __init__(self, frame, screen):
+    def __init__(self, frame, screen, color=RED):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.Tool | Qt.WindowType.WindowTransparentForInput
                          | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.frame = QRect(frame)
+        self.color = color
         self.recording = False
         self.area = physical_rect(screen)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -110,7 +111,7 @@ class RecordBorder(QWidget):
         scale = self.area.width() / self.width()
         p.scale(1 / scale, 1 / scale)
         p.translate(-self.area.topLeft())
-        pen = QPen(RED, 1)
+        pen = QPen(self.color, 1)
         if not self.recording:
             pen.setStyle(Qt.PenStyle.CustomDashLine)
             pen.setDashPattern([4, 3])

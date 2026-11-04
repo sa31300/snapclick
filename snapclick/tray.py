@@ -12,6 +12,7 @@ from snapclick.capture import Capture, clipboard_version, restore_clipboard, sav
 from snapclick.draw import DrawWindow, draw_title
 from snapclick.preview import Preview
 from snapclick.record import Record
+from snapclick.repeat_area import RepeatArea
 from snapclick.stack import Stack
 from snapclick.settings_window import SettingsWindow
 
@@ -85,6 +86,7 @@ class Tray(QSystemTrayIcon):
         self.app = app
         self.capture = None  # the running capture, if any
         self.recording = None
+        self.repeat_area = None
         self.settings_window = None
         self.preview = None
         self.draw_window = None  # the open draw window (§2c), if any
@@ -141,7 +143,7 @@ class Tray(QSystemTrayIcon):
             self.start_capture()
 
     def start_capture(self, frozen=None):
-        if self.capture or self.recording:  # only one selection/session at a time
+        if self.capture or self.recording or self.repeat_area:  # repeat captures come in step 2
             return
         if self.stack:
             self.stack.finish()  # keep the stack so far
@@ -151,7 +153,7 @@ class Tray(QSystemTrayIcon):
         self.capture.finished.connect(self._capture_done)
 
     def start_record(self):
-        if self.capture or self.recording:
+        if self.capture or self.recording or self.repeat_area:
             return
         if self.stack:
             self.stack.finish()
@@ -207,8 +209,10 @@ class Tray(QSystemTrayIcon):
             self.preview.retake.connect(self.undo_and_retake)
             self.preview.save_requested.connect(self.save_from_preview)
             self.preview.add_below.connect(self.start_stack)
+            self.preview.repeat_area.connect(self.start_repeat_area)
             self.preview.draw.connect(self.open_draw)
             self.preview.finish.connect(self.finish_stack)
+            self.preview.finish.connect(self.finish_repeat_area)
             self.preview.closed.connect(self._preview_closed)
 
     def save_from_preview(self):
@@ -225,6 +229,10 @@ class Tray(QSystemTrayIcon):
             self.preview.show_save_failed()
 
     def _preview_closed(self):
+        if self.repeat_area:
+            session, self.repeat_area = self.repeat_area, None
+            session.finished.disconnect(self._repeat_area_finished)
+            session.finish()
         self.undo = None  # free the frozen screen
         if self.draw_window:  # its picture belongs to this preview
             window, self.draw_window = self.draw_window, None
@@ -281,6 +289,24 @@ class Tray(QSystemTrayIcon):
         self.stack.changed.connect(self._stack_changed)
         self.stack.finished.connect(self._stack_finished)
         self.preview.raise_()  # above the stack overlay
+
+    def start_repeat_area(self):
+        if (self.capture or self.recording or self.stack or self.repeat_area or self.draw_window or not self.undo
+                or not self.preview or self.preview.mode != "single"):
+            return
+        self.repeat_area = RepeatArea(self.undo["frame"])
+        self.repeat_area.finished.connect(self._repeat_area_finished)
+        self.preview.start_repeat_area()
+        self.preview.raise_()
+
+    def finish_repeat_area(self):
+        if self.repeat_area:
+            self.repeat_area.finish()
+
+    def _repeat_area_finished(self):
+        self.repeat_area = None
+        if self.preview:
+            self.preview.finish_repeat_area()
 
     def _stack_changed(self):
         """A piece was added: the clipboard always holds the whole stack."""
